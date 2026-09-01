@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AMCA CRM — Membership &amp; Engagement Platform (Prototype)</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar__brand">
+    <span class="logo-mark" aria-hidden="true">
+      <svg viewBox="0 0 48 48" width="34" height="34">
+        <circle cx="24" cy="24" r="22" fill="none" stroke="var(--amca-navy)" stroke-width="3"/>
+        <path d="M24 4 A20 20 0 0 1 44 24" fill="none" stroke="var(--amca-orange)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M24 44 A20 20 0 0 1 4 24" fill="none" stroke="var(--amca-teal)" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="24" cy="24" r="7" fill="var(--amca-navy)"/>
+      </svg>
+    </span>
+    <div class="topbar__title">
+      <strong>AMCA</strong><span>CRM Platform</span>
+    </div>
+  </div>
+
+  <nav class="topbar__nav" id="main-nav">
+    <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+    <button class="nav-btn" data-view="pipeline">Membership Pipeline</button>
+    <button class="nav-btn" data-view="companies">Companies &amp; People</button>
+    <button class="nav-btn" data-view="renewals">Renewals &amp; Billing</button>
+    <button class="nav-btn" data-view="comms">Member Comms</button>
+    <button class="nav-btn" data-view="nonmembers">Non-Members</button>
+    <button class="nav-btn" data-view="access">Website Access</button>
+    <button class="nav-btn" data-view="integrations">Integrations</button>
+  </nav>
+
+  <div class="topbar__user">
+    <span class="user-owner-label">Signed in as</span>
+    <strong>Brendan Wills</strong>
+  </div>
+</header>
+
+<main id="app">
+
+  <!-- DASHBOARD -->
+  <section class="view active" id="view-dashboard" data-view="dashboard">
+    <div class="view-head">
+      <h1>Overview</h1>
+      <p>Everything moving through membership, engagement and renewals right now.</p>
+    </div>
+    <div id="dashboard-stats" class="stat-grid"></div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel__head"><h2>Pipeline snapshot</h2><a class="link-btn" data-goto="pipeline">Open pipeline →</a></div>
+        <div id="dashboard-funnel" class="funnel"></div>
+      </div>
+      <div class="panel">
+        <div class="panel__head"><h2>Renewals due soon</h2><a class="link-btn" data-goto="renewals">Open renewals →</a></div>
+        <div id="dashboard-renewals" class="mini-list"></div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel__head"><h2>Recent activity</h2></div>
+        <div id="dashboard-activity" class="activity-list"></div>
+      </div>
+      <div class="panel">
+        <div class="panel__head"><h2>Upcoming events &amp; training</h2><a class="link-btn" data-goto="nonmembers">Open non-members →</a></div>
+        <div id="dashboard-events" class="mini-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PIPELINE -->
+  <section class="view" id="view-pipeline" data-view="pipeline">
+    <div class="view-head">
+      <h1>Membership Pipeline</h1>
+      <p>Enquiry → member → renewal, all in one board. Website enquiries land here directly with an owner attached — no more Google Form or Asana hand-offs.</p>
+    </div>
+    <div id="pipeline-board" class="pipeline-board"></div>
+  </section>
+
+  <!-- COMPANIES & PEOPLE -->
+  <section class="view" id="view-companies" data-view="companies">
+    <div class="view-head">
+      <h1>Companies &amp; People</h1>
+      <p>One record per member business — the company, the people inside it, and each person's role.</p>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="company-search" placeholder="Search companies or people…" />
+      <select id="company-filter-category">
+        <option value="">All categories</option>
+      </select>
+      <select id="company-filter-stage">
+        <option value="">All stages</option>
+      </select>
+    </div>
+    <div id="companies-table" class="data-table"></div>
+  </section>
+
+  <!-- RENEWALS -->
+  <section class="view" id="view-renewals" data-view="renewals">
+    <div class="view-head">
+      <h1>Renewals &amp; Billing</h1>
+      <p>Who is due, where each one is up to, and their live invoice &amp; payment status straight from Xero.</p>
+    </div>
+    <div id="renewals-table" class="data-table"></div>
+  </section>
+
+  <!-- MEMBER COMMS -->
+  <section class="view" id="view-comms" data-view="comms">
+    <div class="view-head">
+      <h1>Member Lifecycle Comms</h1>
+      <p>From the enquiry-received email through welcome, benefits, policy &amp; regulation guides, to renewal reminders — one automated sequence.</p>
+    </div>
+    <div id="comms-sequence" class="comms-sequence"></div>
+  </section>
+
+  <!-- NON-MEMBERS -->
+  <section class="view" id="view-nonmembers" data-view="nonmembers">
+    <div class="view-head">
+      <h1>Non-Member Management</h1>
+      <p>Events, training and certifications for people who aren't (yet) members — plus the full history of every past member and enquiry.</p>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel__head"><h2>Events &amp; training</h2></div>
+        <div id="events-list" class="data-table"></div>
+      </div>
+      <div class="panel">
+        <div class="panel__head"><h2>Non-member database</h2></div>
+        <div id="nonmembers-list" class="data-table"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel__head"><h2>Send an update</h2></div>
+      <div id="campaign-builder" class="campaign-builder"></div>
+    </div>
+  </section>
+
+  <!-- WEBSITE ACCESS -->
+  <section class="view" id="view-access" data-view="access">
+    <div class="view-head">
+      <h1>Website Access &amp; Paywall</h1>
+      <p>The CRM tells the website what a person can see, based on membership status and role. Try switching personas below.</p>
+    </div>
+    <div class="panel">
+      <div class="panel__head">
+        <h2>Preview as…</h2>
+        <select id="persona-select"></select>
+      </div>
+      <div id="portal-preview" class="portal-preview"></div>
+    </div>
+  </section>
+
+  <!-- INTEGRATIONS -->
+  <section class="view" id="view-integrations" data-view="integrations">
+    <div class="view-head">
+      <h1>Integrations</h1>
+      <p>The CRM is the hub. Xero, Mailchimp and the website all read from — and write back to — one source of truth.</p>
+    </div>
+    <div id="integrations-grid" class="stat-grid"></div>
+    <div class="panel">
+      <div class="panel__head"><h2>Sync log</h2></div>
+      <div id="sync-log" class="activity-list"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Company detail drawer -->
+<div id="drawer-overlay" class="drawer-overlay"></div>
+<aside id="drawer" class="drawer">
+  <div class="drawer__head">
+    <h2 id="drawer-title">Company</h2>
+    <button id="drawer-close" class="icon-btn" aria-label="Close">✕</button>
+  </div>
+  <div id="drawer-body" class="drawer__body"></div>
+</aside>
+
+<div id="toast-container" class="toast-container"></div>
+
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
