@@ -4,16 +4,31 @@
    Everything here is illustrative sample data for the interactive prototype.
    In the real build this is replaced by API calls into the CRM backend
    (companies/people/membership from the CRM DB, invoice + payment status
-   from Xero, list/segment membership from Mailchimp).
+   from Xero, list/segment membership + campaign analytics from Mailchimp).
+   "Today" for all relative-date logic in this prototype is 2026-09-01.
    ========================================================================== */
 
-const PIPELINE_STAGES = [
-  { id: "enquiry", label: "Enquiry", group: "prospect" },
-  { id: "qualifying", label: "Qualifying", group: "prospect" },
-  { id: "application", label: "Application Submitted", group: "prospect" },
-  { id: "active", label: "Member – Active", group: "member" },
-  { id: "renewal_due", label: "Renewal Due", group: "member" },
-  { id: "lapsed", label: "Lapsed", group: "former" },
+const TODAY = "2026-09-01";
+
+// New-member pipeline: Enquiry and Qualifying are pre-existing qualification
+// steps; Application → Proposal/Quote → Invoice → Payment is the sales/finance
+// sequence, ending in Active membership (which then leaves this board).
+const ONBOARDING_STAGES = [
+  { id: "enquiry", label: "Enquiry" },
+  { id: "qualifying", label: "Qualifying" },
+  { id: "application", label: "Application Submitted" },
+  { id: "proposal", label: "Proposal / Quote Sent" },
+  { id: "invoice", label: "Invoice Raised" },
+  { id: "payment", label: "Payment Received" },
+];
+
+// Renewal pipeline is deliberately shorter than onboarding — an existing
+// member doesn't re-qualify or get re-proposed to, they just get invoiced.
+const RENEWAL_STAGES = [
+  { id: "upcoming", label: "Renewal Upcoming" },
+  { id: "invoice_sent", label: "Renewal Invoice Sent" },
+  { id: "renewed", label: "Renewed" },
+  { id: "lapsed", label: "Lapsed" },
 ];
 
 const MEMBER_CATEGORIES = [
@@ -35,6 +50,11 @@ const ROLE_TYPES = [
 
 // ---------------------------------------------------------------------------
 // Companies (one record per member business) — the core CRM object.
+// memberState: "prospect" | "active" | "lapsed"
+// onboardingStage: set while memberState === "prospect"
+// renewalStage: null, or "invoice_sent" / "renewed" / "lapsed" once a renewal
+//   cycle has started — "upcoming" is derived automatically (see app.js)
+//   for any active company inside the 90-day renewal window.
 // ---------------------------------------------------------------------------
 const COMPANIES = [
   {
@@ -42,7 +62,9 @@ const COMPANIES = [
     name: "Coastal Air Solutions Pty Ltd",
     abn: "45 123 456 789",
     category: "Contractor Member",
-    stage: "renewal_due",
+    memberState: "active",
+    onboardingStage: null,
+    renewalStage: null,
     owner: "Brendan Wills",
     source: "Website enquiry form",
     joinDate: "2019-03-12",
@@ -66,7 +88,9 @@ const COMPANIES = [
     name: "Meridian HVAC Group",
     abn: "88 234 567 891",
     category: "Corporate Member",
-    stage: "active",
+    memberState: "active",
+    onboardingStage: null,
+    renewalStage: null,
     owner: "Priya Nair",
     source: "Referral — industry event",
     joinDate: "2016-07-01",
@@ -91,7 +115,9 @@ const COMPANIES = [
     name: "BreezeTech Industries",
     abn: "12 345 678 902",
     category: "Associate Member",
-    stage: "renewal_due",
+    memberState: "active",
+    onboardingStage: null,
+    renewalStage: "invoice_sent",
     owner: "Tom Faulkner",
     source: "Website enquiry form",
     joinDate: "2022-09-30",
@@ -114,7 +140,9 @@ const COMPANIES = [
     name: "Thermex Mechanical Services",
     abn: "77 456 123 890",
     category: "Contractor Member",
-    stage: "lapsed",
+    memberState: "lapsed",
+    onboardingStage: null,
+    renewalStage: "lapsed",
     owner: "Sarah Iuliano",
     source: "Manual entry (legacy)",
     joinDate: "2014-01-20",
@@ -137,7 +165,9 @@ const COMPANIES = [
     name: "Austral Ventilation Co",
     abn: "33 998 214 771",
     category: "Contractor Member",
-    stage: "enquiry",
+    memberState: "prospect",
+    onboardingStage: "enquiry",
+    renewalStage: null,
     owner: "Brendan Wills",
     source: "Website enquiry form",
     joinDate: null,
@@ -159,7 +189,9 @@ const COMPANIES = [
     name: "Highline Mechanical",
     abn: "60 112 887 345",
     category: "Contractor Member",
-    stage: "application",
+    memberState: "prospect",
+    onboardingStage: "application",
+    renewalStage: null,
     owner: "Priya Nair",
     source: "Website enquiry form",
     joinDate: null,
@@ -182,7 +214,9 @@ const COMPANIES = [
     name: "Southbank Cooling & Refrigeration",
     abn: "19 887 654 321",
     category: "Corporate Member",
-    stage: "qualifying",
+    memberState: "prospect",
+    onboardingStage: "qualifying",
+    renewalStage: null,
     owner: "Tom Faulkner",
     source: "Referral — member introduction",
     joinDate: null,
@@ -204,7 +238,9 @@ const COMPANIES = [
     name: "Vantage Air Pty Ltd",
     abn: "24 665 129 887",
     category: "Contractor Member",
-    stage: "active",
+    memberState: "active",
+    onboardingStage: null,
+    renewalStage: null,
     owner: "Sarah Iuliano",
     source: "Website enquiry form",
     joinDate: "2021-02-18",
@@ -222,76 +258,278 @@ const COMPANIES = [
       { date: "2021-02-18", type: "milestone", label: "Became a member" },
     ],
   },
+  {
+    id: "c09",
+    name: "Northern Rivers Air Systems",
+    abn: "51 220 774 903",
+    category: "Contractor Member",
+    memberState: "prospect",
+    onboardingStage: "proposal",
+    renewalStage: null,
+    owner: "Brendan Wills",
+    source: "Website enquiry form",
+    joinDate: null,
+    renewalDate: null,
+    website: "northernriversair.com.au",
+    address: "7 Union St, Lismore NSW",
+    xero: null,
+    mailchimp: { synced: false, segments: [] },
+    people: [
+      { id: "p13", name: "Wayne Kelly", role: "Primary Contact", email: "wayne@northernriversair.com.au", phone: "0428 664 210", primary: true },
+    ],
+    timeline: [
+      { date: "2026-08-29", type: "proposal", label: "Membership proposal & quote sent ($1,650/yr, Contractor tier)" },
+      { date: "2026-08-22", type: "application", label: "Membership application submitted for review" },
+      { date: "2026-08-10", type: "lead", label: "Enquiry submitted via website form, owner assigned: Brendan Wills" },
+    ],
+  },
+  {
+    id: "c10",
+    name: "Ridgeback Mechanical Pty Ltd",
+    abn: "38 902 441 665",
+    category: "Contractor Member",
+    memberState: "prospect",
+    onboardingStage: "invoice",
+    renewalStage: null,
+    owner: "Priya Nair",
+    source: "Website enquiry form",
+    joinDate: null,
+    renewalDate: null,
+    website: "ridgebackmech.com.au",
+    address: "18 Traders Way, Toowoomba QLD",
+    xero: { contactId: "XERO-CT-1408", invoiceNo: "INV-1408", invoiceStatus: "sent", paymentStatus: "Awaiting payment", amount: 1650 },
+    mailchimp: { synced: false, segments: [] },
+    people: [
+      { id: "p14", name: "Simone Carr", role: "Primary Contact", email: "simone@ridgebackmech.com.au", phone: "0447 118 902", primary: true },
+    ],
+    timeline: [
+      { date: "2026-08-30", type: "invoice", label: "Membership invoice INV-1408 raised in Xero ($1,650)" },
+      { date: "2026-08-25", type: "proposal", label: "Proposal accepted" },
+      { date: "2026-08-04", type: "lead", label: "Enquiry submitted via website form, owner assigned: Priya Nair" },
+    ],
+  },
+  {
+    id: "c11",
+    name: "Delta Cooling Co",
+    abn: "62 771 330 214",
+    category: "Associate Member",
+    memberState: "prospect",
+    onboardingStage: "payment",
+    renewalStage: null,
+    owner: "Tom Faulkner",
+    source: "Referral — member introduction",
+    joinDate: null,
+    renewalDate: null,
+    website: "deltacooling.com.au",
+    address: "3 Hargreaves St, Bendigo VIC",
+    xero: { contactId: "XERO-CT-1390", invoiceNo: "INV-1390", invoiceStatus: "paid", paymentStatus: "Paid in full", amount: 980 },
+    mailchimp: { synced: false, segments: [] },
+    people: [
+      { id: "p15", name: "Marcus Ihaka", role: "Primary Contact", email: "marcus@deltacooling.com.au", phone: "0433 208 771", primary: true },
+    ],
+    timeline: [
+      { date: "2026-08-31", type: "invoice", label: "Payment received for INV-1390 — finalising onboarding" },
+      { date: "2026-08-19", type: "invoice", label: "Invoice INV-1390 raised in Xero" },
+      { date: "2026-07-30", type: "lead", label: "Enquiry submitted via referral, owner assigned: Tom Faulkner" },
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------------------
 // Non-members — past enquiries that didn't convert, plus event/training-only
-// contacts. Kept in the same database so re-engagement is possible.
+// contacts. Kept in the same database so re-engagement is possible. Lapsed
+// member companies (see COMPANIES above) also feed the "Former Members" list.
 // ---------------------------------------------------------------------------
 const NON_MEMBERS = [
-  { id: "n01", name: "Ridgeline Air Pty Ltd", contact: "Owen Marsh", email: "owen@ridgelineair.com.au", history: "Enquired 2024, did not proceed", lastTouch: "Attended: Refrigerant Safety Workshop, Jun 2026", tag: "Past Enquiry" },
-  { id: "n02", name: "Ferris Industrial Cooling", contact: "Beth Ferris", email: "beth@ferriscooling.com.au", history: "Member 2015–2023, lapsed", lastTouch: "Attended: Annual HVAC Conference 2025", tag: "Former Member" },
-  { id: "n03", name: "Kade Nguyen (Individual)", contact: "Kade Nguyen", email: "kade.nguyen@gmail.com", history: "Completed Cert IV Certification, 2025", tag: "Training Alumni", lastTouch: "Awarded: Apprentice of the Year 2025" },
-  { id: "n04", name: "Bluewater Mechanical Services", contact: "Sam Ionescu", email: "sam@bluewatermech.com.au", history: "Enquired 2025, budget deferred", lastTouch: "Registered: Design Standards Update webinar", tag: "Past Enquiry" },
-  { id: "n05", name: "Outback Refrigeration", contact: "Priya Chandra", email: "priya@outbackrefrig.com.au", history: "Attended 3 training courses since 2023", lastTouch: "Attended: Confined Spaces Safety Training", tag: "Training Alumni" },
+  { id: "n01", name: "Ridgeline Air Pty Ltd", contact: "Owen Marsh", email: "owen@ridgelineair.com.au", history: "Enquired 2024, did not proceed", lastTouch: "Attended: Refrigerant Safety Workshop, Jun 2026", tag: "Past Enquiry", consent: true, unsubscribed: false },
+  { id: "n02", name: "Ferris Industrial Cooling", contact: "Beth Ferris", email: "beth@ferriscooling.com.au", history: "Member 2015–2023, lapsed", lastTouch: "Attended: Annual HVAC Conference 2025", tag: "Former Member", consent: true, unsubscribed: false },
+  { id: "n03", name: "Kade Nguyen (Individual)", contact: "Kade Nguyen", email: "kade.nguyen@gmail.com", history: "Completed Cert IV Certification, 2025", tag: "Training Alumni", lastTouch: "Awarded: Apprentice of the Year 2025", consent: true, unsubscribed: false },
+  { id: "n04", name: "Bluewater Mechanical Services", contact: "Sam Ionescu", email: "sam@bluewatermech.com.au", history: "Enquired 2025, budget deferred", lastTouch: "Registered: Design Standards Update webinar", tag: "Past Enquiry", consent: false, unsubscribed: false },
+  { id: "n05", name: "Outback Refrigeration", contact: "Priya Chandra", email: "priya@outbackrefrig.com.au", history: "Attended 3 training courses since 2023", lastTouch: "Attended: Confined Spaces Safety Training", tag: "Training Alumni", consent: true, unsubscribed: false },
+  { id: "n06", name: "Harbourside Air & Electrical", contact: "Ngaire Fenwick", email: "ngaire@harboursideair.com.au", history: "Attended Annual Conference 2025 & 2026", tag: "Event Attendee", lastTouch: "Attended: Annual HVAC Conference 2026", consent: true, unsubscribed: true },
+];
+
+const NON_MEMBER_LISTS = [
+  { id: "l1", tag: "Past Enquiry", name: "Past Enquiries", description: "Enquired but didn't proceed to membership." },
+  { id: "l2", tag: "Training Alumni", name: "Training Alumni", description: "Completed a certification or short course, never joined." },
+  { id: "l3", tag: "Former Member", name: "Former Members", description: "Lapsed or resigned members — combined with companies marked Lapsed." },
+  { id: "l4", tag: "Event Attendee", name: "Event Attendees", description: "Attended an AMCA event or webinar without joining." },
 ];
 
 // ---------------------------------------------------------------------------
-// Events & Training — drives the non-member nurture flow.
+// Events & Training — kept as separate content types with separate tabs.
 // ---------------------------------------------------------------------------
 const EVENTS = [
-  { id: "e01", name: "Annual HVAC Conference 2026", date: "2026-11-12", type: "Event", registrations: 214, audience: "Members + Non-members" },
-  { id: "e02", name: "F-Gas Regulation Update Webinar", date: "2026-09-24", type: "Webinar", registrations: 88, audience: "All contacts" },
-  { id: "e03", name: "Cert IV in HVAC/R — Spring Intake", date: "2026-10-06", type: "Certification", registrations: 31, audience: "Non-members (career pathway)" },
-  { id: "e04", name: "Confined Spaces Safety Training", date: "2026-09-18", type: "Training", registrations: 46, audience: "All contacts" },
-  { id: "e05", name: "Design Standards Update Webinar", date: "2026-09-05", type: "Webinar", registrations: 63, audience: "All contacts" },
+  { id: "e01", name: "Annual HVAC Conference 2026", date: "2026-11-12", format: "In-person", registrations: 214, audience: "Members + Non-members", published: true },
+  { id: "e02", name: "F-Gas Regulation Update Webinar", date: "2026-09-24", format: "Webinar", registrations: 88, audience: "All contacts", published: true },
+  { id: "e03", name: "Design Standards Update Webinar", date: "2026-09-05", format: "Webinar", registrations: 63, audience: "All contacts", published: true },
+  { id: "e04", name: "State Chapter Networking Night — QLD", date: "2026-09-19", format: "In-person", registrations: 41, audience: "Members", published: false },
+];
+
+const TRAININGS = [
+  { id: "t01", name: "Cert IV in HVAC/R — Spring Intake", date: "2026-10-06", format: "Certification", registrations: 31, audience: "Non-members (career pathway)", hours: 120, published: true },
+  { id: "t02", name: "Confined Spaces Safety Training", date: "2026-09-18", format: "Short course", registrations: 46, audience: "All contacts", hours: 8, published: true },
+  { id: "t03", name: "Refrigerant Handling Licence Refresher", date: "2026-09-11", format: "Short course", registrations: 37, audience: "Members", hours: 6, published: true },
+  { id: "t04", name: "Apprentice Skills Bootcamp", date: "2026-10-20", format: "Certification", registrations: 22, audience: "Non-members (career pathway)", hours: 40, published: false },
 ];
 
 // ---------------------------------------------------------------------------
-// Member lifecycle comms — the automated email sequence.
+// Benefits CMS — the content members are told about in the benefits email
+// and see on the member portal.
 // ---------------------------------------------------------------------------
-const COMMS_SEQUENCE = [
-  { id: "seq01", stage: "Enquiry received", trigger: "Website form submitted", audience: "New lead", subject: "Thanks for your enquiry — AMCA Australia" },
-  { id: "seq02", stage: "Welcome", trigger: "Application approved", audience: "New member", subject: "Welcome to AMCA — here's what happens next" },
-  { id: "seq03", stage: "Benefits walkthrough", trigger: "+7 days after welcome", audience: "New member", subject: "Getting the most from your AMCA membership" },
-  { id: "seq04", stage: "Policy & regulation updates", trigger: "Published by Advocacy team", audience: "All active members", subject: "New: F-Gas Regulation changes you need to know" },
-  { id: "seq05", stage: "Renewal reminder (60 days)", trigger: "60 days before renewal date", audience: "Renewal due", subject: "Your AMCA membership renews in 60 days" },
-  { id: "seq06", stage: "Renewal reminder (30 days)", trigger: "30 days before renewal date", audience: "Renewal due", subject: "Renewal reminder — 30 days to go" },
-  { id: "seq07", stage: "Renewal reminder (7 days)", trigger: "7 days before renewal date", audience: "Renewal due", subject: "Final reminder — your membership renews in 7 days" },
-  { id: "seq08", stage: "Renewal confirmation", trigger: "Payment received in Xero", audience: "Renewed member", subject: "You're all set — renewal confirmed" },
-  { id: "seq09", stage: "Lapse notice", trigger: "30 days overdue, unpaid", audience: "Lapsed member", subject: "We've missed you — your AMCA membership has lapsed" },
+const BENEFITS = [
+  { id: "b01", title: "Technical Helpline", category: "Technical Support", description: "Unlimited phone & email access to AMCA's technical advisory team for code compliance and design queries.", tiers: ["Contractor Member", "Corporate Member"], status: "Published", updated: "2026-06-10" },
+  { id: "b02", title: "Testo Member Pricing", category: "Discounts", description: "15% off Testo HVAC/R diagnostic tools, ongoing.", tiers: ["Contractor Member", "Corporate Member", "Associate Member"], status: "Published", updated: "2026-08-02" },
+  { id: "b03", title: "Technical Standards Library", category: "Resources", description: "Full access to AMCA's design and installation standards library, updated as codes change.", tiers: ["Contractor Member", "Corporate Member"], status: "Published", updated: "2026-04-18" },
+  { id: "b04", title: "Discounted Training Places", category: "Training", description: "Member pricing on all certification and short courses.", tiers: ["Contractor Member", "Corporate Member", "Associate Member", "Affiliate Member"], status: "Published", updated: "2026-07-22" },
+  { id: "b05", title: "Voting Rights", category: "Governance", description: "Vote at the AGM and in board elections.", tiers: ["Contractor Member", "Corporate Member"], status: "Published", updated: "2025-11-01" },
+  { id: "b06", title: "Wellbeing Support Line", category: "Member Support", description: "Confidential counselling and wellbeing support for members and their staff.", tiers: ["Contractor Member", "Corporate Member", "Associate Member"], status: "Draft", updated: "2026-08-28" },
 ];
 
 // ---------------------------------------------------------------------------
-// Website access rules — what each persona can see on the member portal.
+// Automation Settings — the config screen for lifecycle email templates &
+// workflow triggers, grouped by onboarding / renewal / offboarding.
+// Each company's drawer shows its live progress against these same steps.
 // ---------------------------------------------------------------------------
-const ACCESS_PERSONAS = [
-  { id: "guest", label: "Guest (not logged in)" },
-  { id: "non_member", label: "Non-member (logged in)" },
-  { id: "member_active", label: "Member — Active" },
-  { id: "member_renewal_due", label: "Member — Renewal Due" },
-  { id: "member_lapsed", label: "Member — Lapsed" },
-  { id: "staff", label: "AMCA Staff" },
+const WORKFLOWS = {
+  onboarding: [
+    { id: "ob1", name: "Enquiry acknowledgement", stageGate: "enquiry", trigger: "Enquiry submitted via website", delay: "Immediate", audience: "New lead", subject: "Thanks for your enquiry — AMCA Australia", active: true },
+    { id: "ob2", name: "Application received", stageGate: "application", trigger: "Application submitted", delay: "Immediate", audience: "Applicant", subject: "We've received your membership application", active: true },
+    { id: "ob3", name: "Proposal / quote sent", stageGate: "proposal", trigger: "Proposal issued", delay: "Immediate", audience: "Applicant", subject: "Your AMCA membership proposal", active: true },
+    { id: "ob4", name: "Invoice issued", stageGate: "invoice", trigger: "Invoice raised in Xero", delay: "Immediate", audience: "Applicant", subject: "Your AMCA membership invoice", active: true },
+    { id: "ob5", name: "Welcome pack", stageGate: "payment", trigger: "Payment received", delay: "Immediate", audience: "New member", subject: "Welcome to AMCA — here's what happens next", active: true },
+    { id: "ob6", name: "Benefits walkthrough", stageGate: "active+7", trigger: "After welcome pack", delay: "+7 days", audience: "New member", subject: "Getting the most from your AMCA membership", active: true },
+    { id: "ob7", name: "New member spotlight", stageGate: "active+30", trigger: "After welcome pack", delay: "+30 days", audience: "New member", subject: "Tell us about your business — new member spotlight", active: false },
+  ],
+  renewal: [
+    { id: "rn1", name: "Renewal reminder (60 days)", stageGate: "upcoming", trigger: "60 days before renewal date", delay: "-60 days", audience: "Renewal due", subject: "Your AMCA membership renews in 60 days", active: true },
+    { id: "rn2", name: "Renewal reminder (30 days)", stageGate: "upcoming", trigger: "30 days before renewal date", delay: "-30 days", audience: "Renewal due", subject: "Renewal reminder — 30 days to go", active: true },
+    { id: "rn3", name: "Renewal invoice issued", stageGate: "invoice_sent", trigger: "Renewal invoice raised in Xero", delay: "Immediate", audience: "Renewal due", subject: "Your AMCA renewal invoice is ready", active: true },
+    { id: "rn4", name: "Renewal reminder (7 days)", stageGate: "invoice_sent", trigger: "7 days before renewal date, unpaid", delay: "-7 days", audience: "Renewal due", subject: "Final reminder — your membership renews in 7 days", active: true },
+    { id: "rn5", name: "Renewal confirmation", stageGate: "renewed", trigger: "Payment received in Xero", delay: "Immediate", audience: "Renewed member", subject: "You're all set — renewal confirmed", active: true },
+  ],
+  offboarding: [
+    { id: "of1", name: "Overdue notice", stageGate: "overdue7", trigger: "Invoice 7 days overdue", delay: "+7 days", audience: "Unpaid renewal", subject: "We haven't received your renewal payment", active: true },
+    { id: "of2", name: "Final notice", stageGate: "overdue30", trigger: "Invoice 30 days overdue", delay: "+30 days", audience: "Unpaid renewal", subject: "Final notice — your AMCA membership will lapse", active: true },
+    { id: "of3", name: "Lapse confirmation", stageGate: "lapsed", trigger: "Marked lapsed", delay: "Immediate", audience: "Lapsed member", subject: "We've missed you — your AMCA membership has lapsed", active: true },
+    { id: "of4", name: "Win-back offer", stageGate: "lapsed+30", trigger: "30 days after lapse", delay: "+30 days", audience: "Lapsed member", subject: "Come back to AMCA — here's what you're missing", active: false },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Campaigns — generic, all-audience sends (as distinct from the automated
+// per-company lifecycle emails above), with Mailchimp-style analytics.
+// ---------------------------------------------------------------------------
+const CAMPAIGNS = [
+  { id: "cm1", name: "Q3 Benefits Spotlight", audience: "Members", segment: "All Active Members", sentDate: "2026-09-01", recipients: 0, delivered: 0, deliveredRate: null, openRate: null, clickRate: null, status: "Scheduled" },
+  { id: "cm2", name: "Spring Training Calendar 2026", audience: "Non-members", segment: "Training Alumni", sentDate: "2026-08-18", recipients: 412, delivered: 404, deliveredRate: 98, openRate: 46, clickRate: 12, status: "Sent" },
+  { id: "cm3", name: "New F-Gas Regulation Alert", audience: "Members", segment: "All Active Members", sentDate: "2026-08-01", recipients: 1860, delivered: 1829, deliveredRate: 98, openRate: 61, clickRate: 24, status: "Sent" },
+  { id: "cm4", name: "Annual HVAC Conference — Save the Date", audience: "Mixed", segment: "All Contacts", sentDate: "2026-07-20", recipients: 2184, delivered: 2140, deliveredRate: 98, openRate: 38, clickRate: 9, status: "Sent" },
+  { id: "cm5", name: "Win-back: We've missed you", audience: "Non-members", segment: "Former Members", sentDate: "2026-07-05", recipients: 96, delivered: 93, deliveredRate: 97, openRate: 29, clickRate: 6, status: "Sent" },
+  { id: "cm6", name: "Apprentice of the Year — Nominations Open", audience: "Mixed", segment: "All Contacts", sentDate: "2026-06-14", recipients: 2140, delivered: 2091, deliveredRate: 98, openRate: 33, clickRate: 8, status: "Sent" },
 ];
 
-const PORTAL_RESOURCES = [
-  { id: "r1", name: "Industry News & Advocacy Updates", rule: ["guest", "non_member", "member_active", "member_renewal_due", "member_lapsed", "staff"] },
-  { id: "r2", name: "Event & Training Registration", rule: ["guest", "non_member", "member_active", "member_renewal_due", "member_lapsed", "staff"] },
-  { id: "r3", name: "Member Directory", rule: ["member_active", "member_renewal_due", "staff"] },
-  { id: "r4", name: "Technical Standards Library", rule: ["member_active", "member_renewal_due", "staff"] },
-  { id: "r5", name: "Regulation & Policy Guides", rule: ["member_active", "member_renewal_due", "staff"] },
-  { id: "r6", name: "Member Pricing on Training", rule: ["member_active", "member_renewal_due", "staff"] },
-  { id: "r7", name: "Technical Helpline Booking", rule: ["member_active", "staff"] },
-  { id: "r8", name: "Vote in AMCA Elections", rule: ["member_active", "staff"] },
-  { id: "r9", name: "Renew / Update Billing Details", rule: ["member_active", "member_renewal_due", "member_lapsed", "staff"] },
-  { id: "r10", name: "Admin: Manage All Members", rule: ["staff"] },
-];
+// ---------------------------------------------------------------------------
+// Impact tracker — the numbers that go in a board report. Membership counts
+// are derived live from COMPANIES/people in app.js; these are the ones that
+// aren't derivable from CRM records alone.
+// ---------------------------------------------------------------------------
+const IMPACT_METRICS = {
+  periodLabel: "FY2026, year to date (1 Sep)",
+  trainingHoursDelivered: 1240,
+  freeResourceHoursAccessed: 3860,
+  freeResourcePdfDownloads: 5410,
+  eventAttendeesYTD: 612,
+  policyGuidesPublished: 18,
+  renewalRate: 94,
+};
 
 // ---------------------------------------------------------------------------
-// Integration status strip
+// Integration status strip (Settings → Integrations)
 // ---------------------------------------------------------------------------
 const INTEGRATIONS = [
-  { id: "xero", name: "Xero", role: "Renewal invoices + payment status", status: "connected", lastSync: "2026-09-01 08:14" },
-  { id: "mailchimp", name: "Mailchimp", role: "Contacts, segments & campaigns", status: "connected", lastSync: "2026-09-01 07:50" },
-  { id: "website", name: "AMCA Website", role: "Login, paywall & member resources", status: "connected", lastSync: "2026-09-01 08:20" },
+  { id: "xero", name: "Xero", role: "Onboarding & renewal invoices + payment status", status: "connected", lastSync: "2026-09-01 08:14" },
+  { id: "mailchimp", name: "Mailchimp", role: "Contacts, segments & campaign analytics", status: "connected", lastSync: "2026-09-01 07:50" },
+  { id: "website", name: "AMCA Website", role: "Login, paywall & member resources, CMS publishing", status: "connected", lastSync: "2026-09-01 08:20" },
 ];
+
+// ---------------------------------------------------------------------------
+// Users (Settings → User Management) — CRM seats, not member portal logins.
+// ---------------------------------------------------------------------------
+const USERS = [
+  { id: "u1", name: "Brendan Wills", email: "brendan@amca.com.au", role: "Admin", status: "Active", lastActive: "2026-09-01" },
+  { id: "u2", name: "Priya Nair", email: "priya@amca.com.au", role: "Membership Manager", status: "Active", lastActive: "2026-08-31" },
+  { id: "u3", name: "Tom Faulkner", email: "tom@amca.com.au", role: "Membership Manager", status: "Active", lastActive: "2026-08-29" },
+  { id: "u4", name: "Sarah Iuliano", email: "sarah@amca.com.au", role: "Finance & Billing", status: "Active", lastActive: "2026-08-30" },
+  { id: "u5", name: "Callum Ng", email: "callum@amca.com.au", role: "Comms & Events", status: "Invited", lastActive: "—" },
+];
+
+// ---------------------------------------------------------------------------
+// Digital Handbook — built and maintained in a separate system; the CRM only
+// needs an access/edit entry point and a sync status, not the content itself.
+// ---------------------------------------------------------------------------
+const HANDBOOK = {
+  name: "AMCA Member Handbook",
+  system: "Handbook CMS (separate system)",
+  lastPublished: "2026-08-20",
+  sections: 14,
+  editUrl: "handbook.amca.com.au/admin",
+  viewUrl: "handbook.amca.com.au",
+};
+
+// ---------------------------------------------------------------------------
+// Document Generator — templates staff can edit and generate per company.
+// ---------------------------------------------------------------------------
+const DOC_TEMPLATES = [
+  { id: "d1", name: "Membership Certificate", appliesTo: "Active members", body: "This certifies that {{company_name}} is a financial {{category}} of AMCA Australia, member since {{member_since}}.", active: true, updated: "2026-06-01" },
+  { id: "d2", name: "Welcome Letter", appliesTo: "New members", body: "Dear {{primary_contact}}, welcome to AMCA Australia. {{company_name}} is now a {{category}}, effective {{member_since}}.", active: true, updated: "2026-05-12" },
+  { id: "d3", name: "Renewal Invoice Cover Letter", appliesTo: "Renewal due members", body: "Dear {{primary_contact}}, please find attached your AMCA renewal invoice ({{invoice_no}}) for {{company_name}}, due {{renewal_date}}.", active: true, updated: "2026-07-30" },
+  { id: "d4", name: "Compliance Statement", appliesTo: "Active members", body: "{{company_name}} ({{abn}}) is confirmed as a current {{category}} of AMCA Australia in good standing as at today's date.", active: false, updated: "2026-04-22" },
+];
+
+// ---------------------------------------------------------------------------
+// Website CMS — public-site content, separate from the operational
+// Events/Training/Benefits tabs (which keep their own publish toggle).
+// ---------------------------------------------------------------------------
+const CMS_TYPES = [
+  { key: "guides", label: "Guides" },
+  { key: "blog", label: "Blog" },
+  { key: "banners", label: "Banners" },
+  { key: "awards", label: "Awards" },
+  { key: "initiatives", label: "Initiatives" },
+  { key: "impact", label: "Impact Updates" },
+  { key: "careers", label: "Careers" },
+  { key: "handbook", label: "Handbook" },
+];
+
+const CMS_CONTENT = {
+  guides: [
+    { id: "g1", title: "Guide to the 2026 F-Gas Regulation Changes", summary: "What changed, who it affects, and the compliance deadline.", status: "Published", updated: "2026-08-10" },
+    { id: "g2", title: "New Member Onboarding Guide", summary: "A step-by-step guide for newly joined contractor members.", status: "Published", updated: "2026-05-14" },
+    { id: "g3", title: "2027 Design Standards Preview", summary: "Early look at the next standards revision, for member comment.", status: "Draft", updated: "2026-08-27" },
+  ],
+  blog: [
+    { id: "bl1", title: "Why refrigerant handling licences are getting stricter", summary: "A look at the regulatory trend and what members should do now.", status: "Published", updated: "2026-08-05" },
+    { id: "bl2", title: "Member spotlight: Vantage Air Pty Ltd", summary: "How a WA contractor member grew its apprentice program.", status: "Published", updated: "2026-07-18" },
+  ],
+  banners: [
+    { id: "ba1", title: "AMCA Member Exclusive — Testo 15% off", summary: "Homepage hero banner promoting the Testo member discount.", status: "Published", updated: "2026-08-01" },
+    { id: "ba2", title: "Annual HVAC Conference 2026 — Register Now", summary: "Sitewide banner counting down to the November conference.", status: "Draft", updated: "2026-08-29" },
+  ],
+  awards: [
+    { id: "aw1", title: "Apprentice of the Year 2025 — Kade Nguyen", summary: "Awarded at the 2025 Annual Conference for outstanding apprenticeship performance.", status: "Published", updated: "2025-11-20" },
+    { id: "aw2", title: "2026 Award Nominations Open", summary: "Call for nominations across all AMCA award categories.", status: "Published", updated: "2026-06-01" },
+  ],
+  initiatives: [
+    { id: "in1", title: "Net Zero HVAC Roadmap", summary: "AMCA's industry initiative supporting the transition to low-GWP refrigerants.", status: "Published", updated: "2026-03-15" },
+    { id: "in2", title: "Regional Apprentice Support Fund", summary: "New initiative subsidising apprentice training costs in regional areas.", status: "Draft", updated: "2026-08-22" },
+  ],
+  impact: [
+    { id: "im1", title: "FY2026 Impact Report — Year to Date", summary: "Training hours delivered, resources accessed, and renewal rate this year.", status: "Published", updated: "2026-09-01" },
+    { id: "im2", title: "FY2025 Impact Report", summary: "The full-year impact summary for FY2025.", status: "Published", updated: "2025-10-05" },
+  ],
+  careers: [
+    { id: "ca1", title: "Technical Advisor — AMCA National Office", summary: "Full-time technical advisory role supporting the member helpline.", status: "Published", updated: "2026-08-15" },
+    { id: "ca2", title: "Membership Coordinator (Part-time)", summary: "Supporting the membership team with onboarding and renewals.", status: "Draft", updated: "2026-08-30" },
+  ],
+};
