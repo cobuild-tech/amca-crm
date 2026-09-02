@@ -38,7 +38,7 @@ const MEMBER_CATEGORIES = [
   "Affiliate Member",
 ];
 
-const OWNERS = ["Brendan Wills", "Priya Nair", "Tom Faulkner", "Sarah Iuliano"];
+const OWNERS = ["Michael Hamilton", "Marie Neisler"];
 
 const ROLE_TYPES = [
   "Primary Contact",
@@ -65,7 +65,7 @@ const COMPANIES = [
     memberState: "active",
     onboardingStage: null,
     renewalStage: null,
-    owner: "Brendan Wills",
+    owner: "Marie Neisler",
     source: "Website enquiry form",
     joinDate: "2019-03-12",
     renewalDate: "2026-09-30",
@@ -91,7 +91,7 @@ const COMPANIES = [
     memberState: "active",
     onboardingStage: null,
     renewalStage: null,
-    owner: "Priya Nair",
+    owner: "Michael Hamilton",
     source: "Referral — industry event",
     joinDate: "2016-07-01",
     renewalDate: "2027-07-01",
@@ -118,7 +118,7 @@ const COMPANIES = [
     memberState: "active",
     onboardingStage: null,
     renewalStage: "invoice_sent",
-    owner: "Tom Faulkner",
+    owner: "Michael Hamilton",
     source: "Website enquiry form",
     joinDate: "2022-09-30",
     renewalDate: "2026-09-15",
@@ -143,7 +143,7 @@ const COMPANIES = [
     memberState: "lapsed",
     onboardingStage: null,
     renewalStage: "lapsed",
-    owner: "Sarah Iuliano",
+    owner: "Marie Neisler",
     source: "Manual entry (legacy)",
     joinDate: "2014-01-20",
     renewalDate: "2025-11-01",
@@ -168,7 +168,7 @@ const COMPANIES = [
     memberState: "prospect",
     onboardingStage: "enquiry",
     renewalStage: null,
-    owner: "Brendan Wills",
+    owner: "Marie Neisler",
     source: "Website enquiry form",
     joinDate: null,
     renewalDate: null,
@@ -181,7 +181,7 @@ const COMPANIES = [
     ],
     timeline: [
       { date: "2026-08-27", type: "email", label: "Enquiry received — auto-acknowledgement sent" },
-      { date: "2026-08-27", type: "lead", label: "Enquiry submitted via website form, owner assigned: Brendan Wills" },
+      { date: "2026-08-27", type: "lead", label: "Enquiry submitted via website form, owner assigned: Marie Neisler" },
     ],
   },
   {
@@ -192,7 +192,7 @@ const COMPANIES = [
     memberState: "prospect",
     onboardingStage: "application",
     renewalStage: null,
-    owner: "Priya Nair",
+    owner: "Marie Neisler",
     source: "Website enquiry form",
     joinDate: null,
     renewalDate: null,
@@ -206,7 +206,7 @@ const COMPANIES = [
     timeline: [
       { date: "2026-08-20", type: "application", label: "Membership application submitted for review" },
       { date: "2026-08-05", type: "status", label: "Qualified — moved to Application stage" },
-      { date: "2026-07-29", type: "lead", label: "Enquiry submitted via website form, owner assigned: Priya Nair" },
+      { date: "2026-07-29", type: "lead", label: "Enquiry submitted via website form, owner assigned: Marie Neisler" },
     ],
   },
   {
@@ -217,7 +217,7 @@ const COMPANIES = [
     memberState: "prospect",
     onboardingStage: "qualifying",
     renewalStage: null,
-    owner: "Tom Faulkner",
+    owner: "Michael Hamilton",
     source: "Referral — member introduction",
     joinDate: null,
     renewalDate: null,
@@ -230,7 +230,7 @@ const COMPANIES = [
     ],
     timeline: [
       { date: "2026-08-24", type: "call", label: "Discovery call completed — eligibility confirmed" },
-      { date: "2026-08-11", type: "lead", label: "Enquiry submitted via referral, owner assigned: Tom Faulkner" },
+      { date: "2026-08-11", type: "lead", label: "Enquiry submitted via referral, owner assigned: Michael Hamilton" },
     ],
   },
   {
@@ -241,7 +241,7 @@ const COMPANIES = [
     memberState: "active",
     onboardingStage: null,
     renewalStage: null,
-    owner: "Sarah Iuliano",
+    owner: "Marie Neisler",
     source: "Website enquiry form",
     joinDate: "2021-02-18",
     renewalDate: "2027-02-18",
@@ -266,7 +266,7 @@ const COMPANIES = [
     memberState: "prospect",
     onboardingStage: "proposal",
     renewalStage: null,
-    owner: "Brendan Wills",
+    owner: "Marie Neisler",
     source: "Website enquiry form",
     joinDate: null,
     renewalDate: null,
@@ -280,7 +280,7 @@ const COMPANIES = [
     timeline: [
       { date: "2026-08-29", type: "proposal", label: "Membership proposal & quote sent ($1,650/yr, Contractor tier)" },
       { date: "2026-08-22", type: "application", label: "Membership application submitted for review" },
-      { date: "2026-08-10", type: "lead", label: "Enquiry submitted via website form, owner assigned: Brendan Wills" },
+      { date: "2026-08-10", type: "lead", label: "Enquiry submitted via website form, owner assigned: Marie Neisler" },
     ],
   },
   {
@@ -291,7 +291,7 @@ const COMPANIES = [
     memberState: "prospect",
     onboardingStage: "invoice",
     renewalStage: null,
-    owner: "Priya Nair",
+    owner: "Marie Neisler",
     source: "Website enquiry form",
     joinDate: null,
     renewalDate: null,
@@ -305,7 +305,7 @@ const COMPANIES = [
     timeline: [
       { date: "2026-08-30", type: "invoice", label: "Membership invoice INV-1408 raised in Xero ($1,650)" },
       { date: "2026-08-25", type: "proposal", label: "Proposal accepted" },
-      { date: "2026-08-04", type: "lead", label: "Enquiry submitted via website form, owner assigned: Priya Nair" },
+      { date: "2026-08-04", type: "lead", label: "Enquiry submitted via website form, owner assigned: Marie Neisler" },
     ],
   },
   {
@@ -316,7 +316,7 @@ const COMPANIES = [
     memberState: "prospect",
     onboardingStage: "payment",
     renewalStage: null,
-    owner: "Tom Faulkner",
+    owner: "Michael Hamilton",
     source: "Referral — member introduction",
     joinDate: null,
     renewalDate: null,
@@ -330,7 +330,7 @@ const COMPANIES = [
     timeline: [
       { date: "2026-08-31", type: "invoice", label: "Payment received for INV-1390 — finalising onboarding" },
       { date: "2026-08-19", type: "invoice", label: "Invoice INV-1390 raised in Xero" },
-      { date: "2026-07-30", type: "lead", label: "Enquiry submitted via referral, owner assigned: Tom Faulkner" },
+      { date: "2026-07-30", type: "lead", label: "Enquiry submitted via referral, owner assigned: Michael Hamilton" },
     ],
   },
 ];
@@ -512,13 +512,22 @@ const INTEGRATIONS = [
 // ---------------------------------------------------------------------------
 // Users (Settings → User Management) — CRM seats, not member portal logins.
 // ---------------------------------------------------------------------------
+// Real AMCA national office staff (amca.com.au/Public/About/Team.aspx).
 const USERS = [
-  { id: "u1", name: "Brendan Wills", email: "brendan@amca.com.au", role: "Admin", status: "Active", lastActive: "2026-09-01", chats: 34, messages: 211, documentsGenerated: 12 },
-  { id: "u2", name: "Priya Nair", email: "priya@amca.com.au", role: "Membership Manager", status: "Active", lastActive: "2026-08-31", chats: 21, messages: 132, documentsGenerated: 8 },
-  { id: "u3", name: "Tom Faulkner", email: "tom@amca.com.au", role: "Membership Manager", status: "Active", lastActive: "2026-08-29", chats: 18, messages: 97, documentsGenerated: 5 },
-  { id: "u4", name: "Sarah Iuliano", email: "sarah@amca.com.au", role: "Finance & Billing", status: "Active", lastActive: "2026-08-30", chats: 9, messages: 44, documentsGenerated: 3 },
-  { id: "u5", name: "Callum Ng", email: "callum@amca.com.au", role: "Comms & Events", status: "Invited", lastActive: "—", chats: 0, messages: 0, documentsGenerated: 0 },
+  { id: "u1", name: "Ben Hawkins", email: "ben.hawkins@amca.com.au", role: "Chief Executive Officer", status: "Active", lastActive: "2026-09-01", chats: 28, messages: 156, documentsGenerated: 6 },
+  { id: "u2", name: "Michael Hamilton", email: "michael.hamilton@amca.com.au", role: "Memberships & Partnerships", status: "Active", lastActive: "2026-09-01", chats: 41, messages: 264, documentsGenerated: 14 },
+  { id: "u3", name: "Marie Neisler", email: "marie.neisler@amca.com.au", role: "Membership Services", status: "Active", lastActive: "2026-08-31", chats: 52, messages: 301, documentsGenerated: 19 },
+  { id: "u4", name: "Brooke Alexander", email: "brooke.alexander@amca.com.au", role: "Finance Officer", status: "Active", lastActive: "2026-08-31", chats: 23, messages: 118, documentsGenerated: 22 },
+  { id: "u5", name: "Andrew Kendt", email: "andrew.kendt@amca.com.au", role: "Corporate Services Manager", status: "Active", lastActive: "2026-08-28", chats: 14, messages: 76, documentsGenerated: 9 },
+  { id: "u6", name: "Brendan Keogh", email: "brendan.keogh@amca.com.au", role: "Marketing & Communications", status: "Active", lastActive: "2026-08-31", chats: 33, messages: 189, documentsGenerated: 4 },
+  { id: "u7", name: "John Castillo", email: "john.castillo@amca.com.au", role: "National Training Manager", status: "Active", lastActive: "2026-08-29", chats: 19, messages: 102, documentsGenerated: 7 },
+  { id: "u8", name: "Kalli Ercegovic", email: "kalli.ercegovic@amca.com.au", role: "Training Administrator", status: "Active", lastActive: "2026-08-30", chats: 27, messages: 140, documentsGenerated: 11 },
+  { id: "u9", name: "Ben Fogerty", email: "ben.fogerty@amca.com.au", role: "Technical Services", status: "Active", lastActive: "2026-08-27", chats: 12, messages: 68, documentsGenerated: 3 },
+  { id: "u10", name: "Brendan Upton", email: "brendan.upton@amca.com.au", role: "BIM-MEPAUS Consultant", status: "Active", lastActive: "2026-08-25", chats: 6, messages: 31, documentsGenerated: 2 },
 ];
+
+// Default logged-in user for this prototype session.
+const CURRENT_USER = "Michael Hamilton";
 
 // ---------------------------------------------------------------------------
 // Organizations (Platform view only) — AMCA's state chapters, each a

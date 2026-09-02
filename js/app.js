@@ -29,6 +29,8 @@ const state = {
   docTemplates: JSON.parse(JSON.stringify(DOC_TEMPLATES)),
   view: "action",
   appMode: "crm",
+  currentUser: CURRENT_USER,
+  actionFilter: "mine",
   subtab: { members: "members-pipeline", nonmembers: "nonmembers-contacts", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-send", users: "users-members" },
   editingBenefitId: null,
   dismissedActions: new Set(),
@@ -65,6 +67,14 @@ function addYearsISO(iso, n) {
   const d = new Date(iso + "T00:00:00");
   d.setFullYear(d.getFullYear() + n);
   return d.toISOString().slice(0, 10);
+}
+function addDaysISO(iso, n) {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function dueDateFor(severity) {
+  return addDaysISO(TODAY, severity === "high" ? 1 : severity === "medium" ? 3 : 7);
 }
 function genId(prefix) { return prefix + (Math.floor(Math.random() * 90000) + 10000); }
 function byId(id) { return document.getElementById(id); }
@@ -216,47 +226,56 @@ function switchSubtab(section, id) {
 }
 
 // -------------------------------------------------------------- action center
+function benefitDefaultAssignee(b) {
+  if (b.category === "Technical Support") return "Ben Fogerty";
+  if (b.category === "Training") return "John Castillo";
+  if (b.category === "Events") return "Brendan Keogh";
+  if (b.category === "Third-Party Discount") return "Brendan Keogh";
+  return "Ben Hawkins";
+}
 function computeActionItems() {
   const items = [];
   state.companies.forEach((c) => {
     if (c.memberState === "prospect") {
       if (c.onboardingStage === "enquiry") {
         const d = daysSince(c.timeline[0]?.date) ?? 0;
-        items.push({ id: "ac-enq-" + c.id, severity: d >= 4 ? "high" : "medium", title: `Qualify enquiry: ${c.name}`, detail: `In "Enquiry" for ${d} day${d === 1 ? "" : "s"} — owner ${c.owner}.`, companyId: c.id, assignee: c.owner, action: { label: "Open pipeline", goto: "members", gotoSubtab: "members-pipeline" } });
+        const severity = d >= 4 ? "high" : "medium";
+        items.push({ id: "ac-enq-" + c.id, severity, dueDate: dueDateFor(severity), title: `Qualify enquiry: ${c.name}`, detail: `In "Enquiry" for ${d} day${d === 1 ? "" : "s"} — owner ${c.owner}.`, companyId: c.id, assignee: c.owner, action: { label: "Open pipeline", goto: "members", gotoSubtab: "members-pipeline" } });
       }
       if (c.onboardingStage === "proposal") {
         const d = daysSince(c.timeline[0]?.date) ?? 0;
-        items.push({ id: "ac-prop-" + c.id, severity: d >= 5 ? "high" : "low", title: `Follow up on proposal: ${c.name}`, detail: `Proposal sent ${d} day${d === 1 ? "" : "s"} ago, no response yet.`, companyId: c.id, assignee: c.owner, action: { label: "Open pipeline", goto: "members", gotoSubtab: "members-pipeline" } });
+        const severity = d >= 5 ? "high" : "low";
+        items.push({ id: "ac-prop-" + c.id, severity, dueDate: dueDateFor(severity), title: `Follow up on proposal: ${c.name}`, detail: `Proposal sent ${d} day${d === 1 ? "" : "s"} ago, no response yet.`, companyId: c.id, assignee: c.owner, action: { label: "Open pipeline", goto: "members", gotoSubtab: "members-pipeline" } });
       }
       if (c.onboardingStage === "invoice" && c.xero?.invoiceStatus === "sent") {
-        items.push({ id: "ac-inv-" + c.id, severity: "medium", title: `Chase membership invoice: ${c.name}`, detail: `${c.xero.invoiceNo} (${fmtMoney(c.xero.amount)}) sent, awaiting payment.`, companyId: c.id, assignee: c.owner, action: { label: "Mark paid", run: () => markProspectInvoicePaid(c.id) } });
+        items.push({ id: "ac-inv-" + c.id, severity: "medium", dueDate: dueDateFor("medium"), title: `Chase membership invoice: ${c.name}`, detail: `${c.xero.invoiceNo} (${fmtMoney(c.xero.amount)}) sent, awaiting payment.`, companyId: c.id, assignee: "Brooke Alexander", action: { label: "Mark paid", run: () => markProspectInvoicePaid(c.id) } });
       }
       if (c.onboardingStage === "payment") {
-        items.push({ id: "ac-act-" + c.id, severity: "high", title: `Activate membership: ${c.name}`, detail: `Payment received — welcome sequence is ready to send.`, companyId: c.id, assignee: c.owner, action: { label: "Activate", run: () => activateCompany(c.id) } });
+        items.push({ id: "ac-act-" + c.id, severity: "high", dueDate: dueDateFor("high"), title: `Activate membership: ${c.name}`, detail: `Payment received — welcome sequence is ready to send.`, companyId: c.id, assignee: c.owner, action: { label: "Activate", run: () => activateCompany(c.id) } });
       }
     }
     if (c.memberState === "active") {
       const rs = getRenewalBoardStage(c);
       const d = daysUntil(c.renewalDate);
       if (rs === "upcoming" && d != null && d <= 30) {
-        items.push({ id: "ac-ren-" + c.id, severity: "high", title: `Raise renewal invoice: ${c.name}`, detail: `Renews in ${d} day${d === 1 ? "" : "s"} (${fmtDate(c.renewalDate)}), no invoice raised yet.`, companyId: c.id, assignee: c.owner, action: { label: "Raise invoice", run: () => raiseRenewalInvoice(c.id) } });
+        items.push({ id: "ac-ren-" + c.id, severity: "high", dueDate: dueDateFor("high"), title: `Raise renewal invoice: ${c.name}`, detail: `Renews in ${d} day${d === 1 ? "" : "s"} (${fmtDate(c.renewalDate)}), no invoice raised yet.`, companyId: c.id, assignee: "Brooke Alexander", action: { label: "Raise invoice", run: () => raiseRenewalInvoice(c.id) } });
       } else if (rs === "invoice_sent" && d != null && d <= 10) {
-        items.push({ id: "ac-follow-" + c.id, severity: "high", title: `Follow up before lapse: ${c.name}`, detail: `Renewal invoice sent, ${d} day${d === 1 ? "" : "s"} left, still unpaid.`, companyId: c.id, assignee: c.owner, action: { label: "Open renewals", goto: "members", gotoSubtab: "members-renewals" } });
+        items.push({ id: "ac-follow-" + c.id, severity: "high", dueDate: dueDateFor("high"), title: `Follow up before lapse: ${c.name}`, detail: `Renewal invoice sent, ${d} day${d === 1 ? "" : "s"} left, still unpaid.`, companyId: c.id, assignee: "Brooke Alexander", action: { label: "Open renewals", goto: "members", gotoSubtab: "members-renewals" } });
       }
       if (c.xero?.invoiceStatus === "overdue") {
-        items.push({ id: "ac-overdue-" + c.id, severity: "high", title: `Overdue payment: ${c.name}`, detail: `${c.xero.invoiceNo} overdue — ${c.xero.paymentStatus}.`, companyId: c.id, assignee: c.owner, action: { label: "Open renewals", goto: "members", gotoSubtab: "members-renewals" } });
+        items.push({ id: "ac-overdue-" + c.id, severity: "high", dueDate: dueDateFor("high"), title: `Overdue payment: ${c.name}`, detail: `${c.xero.invoiceNo} overdue — ${c.xero.paymentStatus}.`, companyId: c.id, assignee: "Andrew Kendt", action: { label: "Open renewals", goto: "members", gotoSubtab: "members-renewals" } });
       }
     }
   });
   state.benefits.forEach((b) => {
-    if (b.status === "Draft") items.push({ id: "ac-benefit-" + b.id, severity: "low", title: `Review draft benefit: ${b.title}`, detail: `Last updated ${fmtDate(b.updated)} — publish when ready.`, assignee: "Brendan Wills", action: { label: "Open benefits", goto: "members", gotoSubtab: "members-benefits" } });
+    if (b.status === "Draft") items.push({ id: "ac-benefit-" + b.id, severity: "low", dueDate: dueDateFor("low"), title: `Review draft benefit: ${b.title}`, detail: `Last updated ${fmtDate(b.updated)} — publish when ready.`, assignee: benefitDefaultAssignee(b), action: { label: "Open benefits", goto: "members", gotoSubtab: "members-benefits" } });
   });
   state.campaigns.forEach((cm) => {
-    if (cm.status === "Scheduled") items.push({ id: "ac-camp-" + cm.id, severity: "medium", title: `Scheduled campaign due: ${cm.name}`, detail: `Set to send ${fmtDate(cm.sentDate)} to "${cm.segment}".`, assignee: "Brendan Wills", action: { label: "Open newsletter", goto: "newsletter" } });
+    if (cm.status === "Scheduled") items.push({ id: "ac-camp-" + cm.id, severity: "medium", dueDate: cm.sentDate, title: `Scheduled campaign due: ${cm.name}`, detail: `Set to send ${fmtDate(cm.sentDate)} to "${cm.segment}".`, assignee: "Brendan Keogh", action: { label: "Open newsletter", goto: "newsletter" } });
   });
   Object.entries(state.cms).forEach(([key, items_]) => {
     items_.filter((x) => x.status === "Draft").forEach((x) => {
-      items.push({ id: "ac-cms-" + x.id, severity: "low", title: `Review draft content: ${x.title}`, detail: `${CMS_TYPES.find((t) => t.key === key)?.label || key} — last updated ${fmtDate(x.updated)}.`, assignee: "Brendan Wills", action: { label: "Open website", goto: "cms" } });
+      items.push({ id: "ac-cms-" + x.id, severity: "low", dueDate: dueDateFor("low"), title: `Review draft content: ${x.title}`, detail: `${CMS_TYPES.find((t) => t.key === key)?.label || key} — last updated ${fmtDate(x.updated)}.`, assignee: "Brendan Keogh", action: { label: "Open website", goto: "cms" } });
     });
   });
   return items.filter((i) => !state.dismissedActions.has(i.id)).sort((a, b) => {
@@ -265,11 +284,19 @@ function computeActionItems() {
   });
 }
 function renderActionCenter() {
-  const items = computeActionItems();
+  const all = computeActionItems();
+  const items = state.actionFilter === "mine" ? all.filter((i) => (state.actionAssignee[i.id] || i.assignee) === state.currentUser) : all;
+
+  const filterBar = el("div", { class: "action-filter-bar" }, [
+    el("button", { class: "chip-btn " + (state.actionFilter === "mine" ? "active" : ""), onclick: () => { state.actionFilter = "mine"; renderActionCenter(); } }, `My tasks (${all.filter((i) => (state.actionAssignee[i.id] || i.assignee) === state.currentUser).length})`),
+    el("button", { class: "chip-btn " + (state.actionFilter === "all" ? "active" : ""), onclick: () => { state.actionFilter = "all"; renderActionCenter(); } }, `All tasks (${all.length})`),
+  ]);
+
   const wrap = byId("action-items");
   wrap.innerHTML = "";
+  wrap.appendChild(filterBar);
   if (!items.length) {
-    wrap.appendChild(el("div", { class: "panel" }, "Nothing needs attention right now — nice work."));
+    wrap.appendChild(el("div", { class: "panel" }, state.actionFilter === "mine" ? `Nothing assigned to ${state.currentUser} right now — nice work.` : "Nothing needs attention right now — nice work."));
     return;
   }
   items.forEach((item) => {
@@ -282,14 +309,15 @@ function renderActionCenter() {
     actions.append(el("button", { class: "btn btn-sm btn-ghost", onclick: () => { state.dismissedActions.add(item.id); renderActionCenter(); showToast("Marked as done.", "success"); } }, "Mark done"));
 
     const assigneeSelect = el("select", { class: "assignee-select" }, USERS.map((u) => el("option", { value: u.name }, u.name)));
-    assigneeSelect.value = state.actionAssignee[item.id] || item.assignee || "Brendan Wills";
-    assigneeSelect.onchange = () => { state.actionAssignee[item.id] = assigneeSelect.value; showToast(`Reassigned to ${assigneeSelect.value}.`, "info"); };
+    assigneeSelect.value = state.actionAssignee[item.id] || item.assignee || state.currentUser;
+    assigneeSelect.onchange = () => { state.actionAssignee[item.id] = assigneeSelect.value; showToast(`Reassigned to ${assigneeSelect.value}.`, "info"); renderActionCenter(); };
 
     wrap.append(
       el("div", { class: "action-item severity-" + item.severity }, [
         el("div", { class: "action-item__main" }, [
           el("div", { class: "action-item__title", onclick: item.companyId ? () => openDrawer(item.companyId) : null }, item.title),
           el("div", { class: "action-item__detail" }, item.detail),
+          el("div", { class: "action-item__due" }, "Due " + fmtDate(item.dueDate)),
         ]),
         el("div", { class: "action-item__assignee" }, [el("span", { class: "cell-muted" }, "Assigned to"), assigneeSelect]),
         actions,
