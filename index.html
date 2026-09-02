@@ -22,19 +22,31 @@
       <div class="sidebar__title"><strong>AMCA</strong><span>CRM Platform</span></div>
     </div>
 
+    <div class="mode-toggle" id="mode-toggle">
+      <button class="mode-toggle__btn active" data-appmode="crm">CRM View</button>
+      <button class="mode-toggle__btn" data-appmode="platform">Platform View</button>
+    </div>
+
     <nav class="sidebar__nav" id="main-nav">
-      <button class="nav-btn active" data-view="action">Action Center</button>
-      <button class="nav-btn" data-view="dashboard">Dashboard</button>
-      <button class="nav-btn" data-view="members">Members</button>
-      <button class="nav-btn" data-view="nonmembers">Non-Members</button>
-      <button class="nav-btn" data-view="newsletter">Newsletter</button>
-      <button class="nav-btn" data-view="events">Events</button>
-      <button class="nav-btn" data-view="training">Training</button>
-      <button class="nav-btn" data-view="cms">Website</button>
+      <button class="nav-btn active" data-view="action" data-mode="crm">Action Center</button>
+      <button class="nav-btn" data-view="dashboard" data-mode="crm">Dashboard</button>
+      <button class="nav-btn" data-view="members" data-mode="crm">Members</button>
+      <button class="nav-btn" data-view="nonmembers" data-mode="crm">Non-Members</button>
+      <button class="nav-btn" data-view="newsletter" data-mode="crm">Newsletter</button>
+      <button class="nav-btn" data-view="events" data-mode="crm">Events</button>
+      <button class="nav-btn" data-view="training" data-mode="crm">Training</button>
+      <button class="nav-btn" data-view="cms" data-mode="both">Website</button>
+      <button class="nav-btn" data-view="organizations" data-mode="platform">Organizations</button>
+      <button class="nav-btn" data-view="users" data-mode="platform">Users</button>
+      <button class="nav-btn" data-view="pevents" data-mode="platform">Events</button>
+      <button class="nav-btn" data-view="ptraining" data-mode="platform">Training</button>
+      <button class="nav-btn" data-view="pbenefits" data-mode="platform">Benefits</button>
+      <button class="nav-btn" data-view="phandbook" data-mode="platform">Handbook</button>
+      <button class="nav-btn" data-view="pdocgen" data-mode="platform">Document Generator</button>
     </nav>
 
     <div class="sidebar__footer">
-      <div class="settings-wrap">
+      <div class="settings-wrap" id="settings-wrap">
         <button class="gear-btn" id="settings-gear" aria-label="Settings" title="Settings">⚙</button>
         <div class="settings-popover" id="settings-popover">
           <button data-view="automation">Automation Settings</button>
@@ -335,13 +347,107 @@
       </div>
     </section>
 
-    <!-- USER MANAGEMENT (via gear) -->
+    <!-- USER MANAGEMENT (via gear in CRM view, top-level in Platform view) -->
     <section class="view" id="view-users" data-view="users">
       <div class="view-head">
         <h1>User Management</h1>
         <p>CRM staff seats and roles — separate from member portal logins.</p>
       </div>
-      <div id="users-table" class="data-table"></div>
+      <div class="subtabs" data-section="users">
+        <button class="subtab-btn" data-subtab="users-members">Members</button>
+        <button class="subtab-btn" data-subtab="users-usage">Usage</button>
+      </div>
+      <div id="users-members" class="subtab-panel">
+        <div id="users-table" class="data-table"></div>
+      </div>
+      <div id="users-usage" class="subtab-panel">
+        <p class="subtab-intro">Illustrative — shared usage-analytics infrastructure across both views, not yet built.</p>
+        <div id="users-usage-grid" class="stat-grid"></div>
+      </div>
+    </section>
+
+    <!-- ORGANIZATIONS (Platform view) -->
+    <section class="view" id="view-organizations" data-view="organizations">
+      <div class="view-head">
+        <h1>Organizations</h1>
+        <p>AMCA's state chapters, each a delegated sub-account.</p>
+      </div>
+      <div class="toolbar">
+        <span class="cell-muted" id="org-count"></span>
+        <button class="btn btn-primary" id="org-add-btn" style="margin-left:auto;">+ Add organization</button>
+      </div>
+      <div id="org-form-panel" class="panel" style="display:none;"></div>
+      <div id="organizations-table" class="data-table"></div>
+    </section>
+
+    <!-- EVENTS (Platform view — no member/non-member targeting) -->
+    <section class="view" id="view-pevents" data-view="pevents">
+      <div class="view-head">
+        <h1>Events</h1>
+        <p>Synced from CEvent, publish to the website. No member or non-member targeting here.</p>
+      </div>
+      <div class="toolbar">
+        <span class="cell-muted" id="pevents-sync-status"></span>
+        <button class="btn" id="pevents-sync-btn" style="margin-left:auto;">Sync now (CEvent)</button>
+        <button class="btn btn-primary" id="pevent-add-btn">+ Add event</button>
+      </div>
+      <div id="pevent-form-panel" class="panel" style="display:none;"></div>
+      <div id="pevents-table" class="data-table"></div>
+    </section>
+
+    <!-- TRAINING (Platform view) -->
+    <section class="view" id="view-ptraining" data-view="ptraining">
+      <div class="view-head">
+        <h1>Training &amp; Certification</h1>
+        <p>Synced from Moodle, publish to the website. No member or non-member targeting here.</p>
+      </div>
+      <div class="toolbar">
+        <span class="cell-muted" id="ptraining-sync-status"></span>
+        <button class="btn" id="ptraining-sync-btn" style="margin-left:auto;">Sync now (Moodle)</button>
+        <button class="btn btn-primary" id="ptraining-add-btn">+ Add training</button>
+      </div>
+      <div id="ptraining-form-panel" class="panel" style="display:none;"></div>
+      <div id="ptraining-table" class="data-table"></div>
+    </section>
+
+    <!-- BENEFITS (Platform view — website content only, no tiers/redemption) -->
+    <section class="view" id="view-pbenefits" data-view="pbenefits">
+      <div class="view-head">
+        <h1>Benefits</h1>
+        <p>Website content only — no member tiers, redemption or discount logic here.</p>
+      </div>
+      <div class="toolbar">
+        <span class="cell-muted" id="pbenefits-count"></span>
+        <button class="btn btn-primary" id="pbenefit-add-btn" style="margin-left:auto;">+ Add benefit</button>
+      </div>
+      <div id="pbenefit-form-panel" class="panel" style="display:none;"></div>
+      <div id="pbenefits-grid" class="benefits-grid"></div>
+    </section>
+
+    <!-- HANDBOOK (Platform view) -->
+    <section class="view" id="view-phandbook" data-view="phandbook">
+      <div class="view-head">
+        <h1>Handbook</h1>
+        <p>Authored and published in a separate system — this is the access point and sync status.</p>
+      </div>
+      <div id="phandbook-panel"></div>
+    </section>
+
+    <!-- DOCUMENT GENERATOR (Platform view) -->
+    <section class="view" id="view-pdocgen" data-view="pdocgen">
+      <div class="view-head">
+        <h1>Document Generator</h1>
+        <p>Templates staff can edit, and a quick way to generate a merged document.</p>
+      </div>
+      <div class="panel">
+        <div class="panel__head"><h2>Templates</h2></div>
+        <div id="pdocgen-templates" class="workflow-list"></div>
+      </div>
+      <div class="panel">
+        <div class="panel__head"><h2>Generate a document</h2></div>
+        <div id="pdocgen-form" class="campaign-builder"></div>
+        <div id="pdocgen-preview" class="doc-preview" style="display:none;"></div>
+      </div>
     </section>
 
   </main>

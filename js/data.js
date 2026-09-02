@@ -506,17 +506,30 @@ const INTEGRATIONS = [
   { id: "mailchimp", name: "Mailchimp", role: "Contacts, segments & campaign analytics", status: "connected", lastSync: "2026-09-01 07:50" },
   { id: "website", name: "AMCA Website", role: "Login, paywall & member resources, CMS publishing", status: "connected", lastSync: "2026-09-01 08:20" },
   { id: "cevent", name: "CEvent", role: "Events & training registrations sync", status: "connected", lastSync: "2026-08-30 06:00" },
+  { id: "moodle", name: "Moodle", role: "Training course sync (Platform view)", status: "connected", lastSync: "2026-08-30 06:00" },
 ];
 
 // ---------------------------------------------------------------------------
 // Users (Settings → User Management) — CRM seats, not member portal logins.
 // ---------------------------------------------------------------------------
 const USERS = [
-  { id: "u1", name: "Brendan Wills", email: "brendan@amca.com.au", role: "Admin", status: "Active", lastActive: "2026-09-01" },
-  { id: "u2", name: "Priya Nair", email: "priya@amca.com.au", role: "Membership Manager", status: "Active", lastActive: "2026-08-31" },
-  { id: "u3", name: "Tom Faulkner", email: "tom@amca.com.au", role: "Membership Manager", status: "Active", lastActive: "2026-08-29" },
-  { id: "u4", name: "Sarah Iuliano", email: "sarah@amca.com.au", role: "Finance & Billing", status: "Active", lastActive: "2026-08-30" },
-  { id: "u5", name: "Callum Ng", email: "callum@amca.com.au", role: "Comms & Events", status: "Invited", lastActive: "—" },
+  { id: "u1", name: "Brendan Wills", email: "brendan@amca.com.au", role: "Admin", status: "Active", lastActive: "2026-09-01", chats: 34, messages: 211, documentsGenerated: 12 },
+  { id: "u2", name: "Priya Nair", email: "priya@amca.com.au", role: "Membership Manager", status: "Active", lastActive: "2026-08-31", chats: 21, messages: 132, documentsGenerated: 8 },
+  { id: "u3", name: "Tom Faulkner", email: "tom@amca.com.au", role: "Membership Manager", status: "Active", lastActive: "2026-08-29", chats: 18, messages: 97, documentsGenerated: 5 },
+  { id: "u4", name: "Sarah Iuliano", email: "sarah@amca.com.au", role: "Finance & Billing", status: "Active", lastActive: "2026-08-30", chats: 9, messages: 44, documentsGenerated: 3 },
+  { id: "u5", name: "Callum Ng", email: "callum@amca.com.au", role: "Comms & Events", status: "Invited", lastActive: "—", chats: 0, messages: 0, documentsGenerated: 0 },
+];
+
+// ---------------------------------------------------------------------------
+// Organizations (Platform view only) — AMCA's state chapters, each a
+// delegated sub-account with their own users.
+// ---------------------------------------------------------------------------
+const ORGANIZATIONS = [
+  { id: "org1", name: "AMCA National", status: "Active", users: 5, createdDate: "2018-01-10" },
+  { id: "org2", name: "AMCA QLD Chapter", status: "Active", users: 3, createdDate: "2019-04-22" },
+  { id: "org3", name: "AMCA VIC Chapter", status: "Active", users: 2, createdDate: "2019-06-15" },
+  { id: "org4", name: "AMCA WA Chapter", status: "Active", users: 1, createdDate: "2020-02-03" },
+  { id: "org5", name: "AMCA NSW Chapter", status: "Invited", users: 0, createdDate: "2026-08-20" },
 ];
 
 // ---------------------------------------------------------------------------

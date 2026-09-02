@@ -28,7 +28,8 @@ const state = {
   trainingsSynced: false,
   docTemplates: JSON.parse(JSON.stringify(DOC_TEMPLATES)),
   view: "action",
-  subtab: { members: "members-pipeline", nonmembers: "nonmembers-contacts", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-send" },
+  appMode: "crm",
+  subtab: { members: "members-pipeline", nonmembers: "nonmembers-contacts", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-send", users: "users-members" },
   editingBenefitId: null,
   dismissedActions: new Set(),
   actionAssignee: {},
@@ -167,7 +168,13 @@ function renderView(viewId) {
     case "cms": return renderCmsSection();
     case "automation": return renderAutomation();
     case "integrations": return renderIntegrations();
-    case "users": return renderUsers();
+    case "users": return renderUsersView();
+    case "organizations": return renderOrganizations();
+    case "pevents": return renderEventsSimple();
+    case "ptraining": return renderTrainingSimple();
+    case "pbenefits": return renderBenefitsSimple();
+    case "phandbook": return renderHandbookPanel("phandbook-panel");
+    case "pdocgen": return renderDocGen({ templates: "pdocgen-templates", form: "pdocgen-form", preview: "pdocgen-preview" });
   }
 }
 
@@ -202,6 +209,9 @@ function switchSubtab(section, id) {
     else if (id === "newsletter-unsub") renderUnsubEditor();
   } else if (section === "cms") {
     renderCmsPanel(id.replace("cms-", ""));
+  } else if (section === "users") {
+    if (id === "users-members") renderUsers();
+    else if (id === "users-usage") renderUsersUsage();
   }
 }
 
@@ -1424,14 +1434,15 @@ function renderCmsPanel(key) {
 }
 
 // -------------------------------------------------------------- document gen
-function renderDocGen() {
-  const wrap = byId("docgen-templates");
+function renderDocGen(ids) {
+  const idOf = ids || { templates: "docgen-templates", form: "docgen-form", preview: "docgen-preview" };
+  const wrap = byId(idOf.templates);
   wrap.innerHTML = "";
   state.docTemplates.forEach((t) => {
     const row = el("div", { class: "workflow-row" });
     const top = el("div", { class: "workflow-row__top" }, [
       el("div", { class: "workflow-row__name" }, t.name),
-      el("button", { class: "btn btn-sm " + (t.active ? "" : "btn-ghost"), onclick: () => { t.active = !t.active; renderDocGen(); } }, t.active ? "Active" : "Paused"),
+      el("button", { class: "btn btn-sm " + (t.active ? "" : "btn-ghost"), onclick: () => { t.active = !t.active; renderDocGen(ids); } }, t.active ? "Active" : "Paused"),
     ]);
     const meta = el("div", { class: "workflow-row__meta" }, [el("span", {}, [el("b", {}, "Applies to: "), t.appliesTo]), el("span", {}, [el("b", {}, "Updated: "), fmtDate(t.updated)])]);
     const bodyLine = el("div", { class: "workflow-row__subject" }, t.body);
@@ -1444,7 +1455,7 @@ function renderDocGen() {
         el("label", {}, "Template body (use {{merge_fields}})"),
         textarea,
         el("div", { class: "campaign-row" }, [
-          el("button", { class: "btn btn-sm btn-primary", onclick: () => { t.body = textarea.value; showToast("Template updated.", "success"); renderDocGen(); } }, "Save"),
+          el("button", { class: "btn btn-sm btn-primary", onclick: () => { t.body = textarea.value; showToast("Template updated.", "success"); renderDocGen(ids); } }, "Save"),
           el("button", { class: "btn btn-sm btn-ghost", onclick: () => editor.remove() }, "Cancel"),
         ]),
       ]);
@@ -1453,18 +1464,18 @@ function renderDocGen() {
     wrap.appendChild(row);
   });
 
-  const form = byId("docgen-form");
+  const form = byId(idOf.form);
   form.innerHTML = "";
   const companySelect = el("select", {}, state.companies.map((c) => el("option", { value: c.id }, c.name)));
   const templateSelect = el("select", {}, state.docTemplates.filter((t) => t.active).map((t) => el("option", { value: t.id }, t.name)));
   form.append(
     el("div", { class: "campaign-row" }, [el("label", {}, "Company:"), companySelect, el("label", {}, "Template:"), templateSelect]),
     el("div", { class: "campaign-row" }, [
-      el("button", { class: "btn btn-primary", onclick: () => generateDocument(companySelect.value, templateSelect.value) }, "Generate document"),
+      el("button", { class: "btn btn-primary", onclick: () => generateDocument(companySelect.value, templateSelect.value, idOf.preview) }, "Generate document"),
     ])
   );
 }
-function generateDocument(companyId, templateId) {
+function generateDocument(companyId, templateId, previewId) {
   const c = state.companies.find((x) => x.id === companyId);
   const t = state.docTemplates.find((x) => x.id === templateId);
   const primary = c.people.find((p) => p.primary) || c.people[0];
@@ -1476,7 +1487,7 @@ function generateDocument(companyId, templateId) {
     .replaceAll("{{primary_contact}}", primary ? primary.name : "—")
     .replaceAll("{{abn}}", c.abn)
     .replaceAll("{{invoice_no}}", c.xero?.invoiceNo || "—");
-  const preview = byId("docgen-preview");
+  const preview = byId(previewId || "docgen-preview");
   preview.style.display = "block";
   preview.innerHTML = "";
   preview.append(el("h3", {}, `${t.name} — ${c.name}`), el("p", {}, merged));
@@ -1485,8 +1496,8 @@ function generateDocument(companyId, templateId) {
 }
 
 // -------------------------------------------------------------- handbook
-function renderHandbookPanel() {
-  const panel = byId("handbook-panel");
+function renderHandbookPanel(targetId) {
+  const panel = byId(targetId || "handbook-panel");
   panel.innerHTML = "";
   panel.append(
     el("div", { class: "panel" }, [
@@ -1526,10 +1537,13 @@ function renderIntegrations() {
 }
 
 // -------------------------------------------------------------------- users
+function renderUsersView() {
+  switchSubtab("users", state.subtab.users);
+}
 function renderUsers() {
   const wrap = byId("users-table");
   wrap.innerHTML = "";
-  const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Name", "Email", "Role", "Status", "Last active"].map((h) => el("th", {}, h))))]);
+  const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Name", "Email", "Role", "Status", "Last active", "Chats", "Messages", "Docs generated"].map((h) => el("th", {}, h))))]);
   const tbody = el("tbody");
   USERS.forEach((u) => {
     tbody.appendChild(el("tr", {}, [
@@ -1538,10 +1552,237 @@ function renderUsers() {
       el("td", {}, el("span", { class: "badge badge-navy" }, u.role)),
       el("td", {}, el("span", { class: "badge " + (u.status === "Active" ? "badge-success" : "badge-warning") }, u.status)),
       el("td", { class: "cell-muted" }, u.lastActive === "—" ? "—" : fmtDate(u.lastActive)),
+      el("td", {}, String(u.chats ?? 0)),
+      el("td", {}, String(u.messages ?? 0)),
+      el("td", {}, String(u.documentsGenerated ?? 0)),
     ]));
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
+}
+function renderUsersUsage() {
+  const grid = byId("users-usage-grid");
+  grid.innerHTML = "";
+  const totalChats = USERS.reduce((s, u) => s + (u.chats || 0), 0);
+  const totalMessages = USERS.reduce((s, u) => s + (u.messages || 0), 0);
+  const totalDocs = USERS.reduce((s, u) => s + (u.documentsGenerated || 0), 0);
+  grid.append(
+    statCard("Total chats", totalChats, "Across all users", ""),
+    statCard("Messages sent", totalMessages, "Across all users", "accent-teal"),
+    statCard("Documents generated", totalDocs, "Across all users", "accent-orange"),
+    statCard("Active users", USERS.filter((u) => u.status === "Active").length, `of ${USERS.length} total`, "")
+  );
+}
+
+// ------------------------------------------------------- platform view (orgs)
+function renderOrganizations() {
+  byId("org-count").textContent = `${ORGANIZATIONS.length} organizations`;
+  byId("org-add-btn").onclick = () => openOrgForm();
+  const wrap = byId("organizations-table");
+  wrap.innerHTML = "";
+  const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Organization", "Status", "Users", "Created"].map((h) => el("th", {}, h))))]);
+  const tbody = el("tbody");
+  ORGANIZATIONS.forEach((o) => {
+    tbody.appendChild(el("tr", {}, [
+      el("td", { class: "cell-primary" }, o.name),
+      el("td", {}, el("span", { class: "badge " + (o.status === "Active" ? "badge-success" : "badge-warning") }, o.status)),
+      el("td", {}, String(o.users)),
+      el("td", { class: "cell-muted" }, fmtDate(o.createdDate)),
+    ]));
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+function openOrgForm() {
+  const panel = byId("org-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const nameInput = el("input", { type: "text", placeholder: "Organization name" });
+  panel.append(
+    el("h3", {}, "Add organization"),
+    el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          if (!nameInput.value.trim()) { showToast("Organization name is required.", "info"); return; }
+          ORGANIZATIONS.push({ id: genId("org"), name: nameInput.value.trim(), status: "Invited", users: 0, createdDate: TODAY });
+          panel.style.display = "none";
+          showToast("Organization added.", "success");
+          renderOrganizations();
+        },
+      }, "Save"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ])
+  );
+}
+
+// ------------------------------------------------- platform view (events/training)
+function renderEventsSimple() {
+  const moodleLike = INTEGRATIONS.find((i) => i.id === "cevent");
+  byId("pevents-sync-status").textContent = state.eventsSynced ? "Synced with CEvent — up to date" : `Last synced from CEvent: ${moodleLike.lastSync}`;
+  byId("pevents-sync-btn").onclick = () => {
+    if (state.eventsSynced) { showToast("Already up to date with CEvent.", "info"); return; }
+    EVENTS_PENDING_SYNC.forEach((e) => state.events.push({ ...e }));
+    state.eventsSynced = true;
+    logSync(`CEvent sync: ${EVENTS_PENDING_SYNC.length} new event(s) pulled in`);
+    showToast(`${EVENTS_PENDING_SYNC.length} new event(s) synced from CEvent.`, "success");
+    renderEventsSimple();
+  };
+  byId("pevent-add-btn").onclick = () => openPEventForm();
+
+  const wrap = byId("pevents-table");
+  wrap.innerHTML = "";
+  const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Event", "Date", "Format", "Published", ""].map((h) => el("th", {}, h))))]);
+  const tbody = el("tbody");
+  state.events.forEach((e) => {
+    tbody.appendChild(el("tr", {}, [
+      el("td", { class: "cell-primary" }, e.name),
+      el("td", {}, fmtDate(e.date)),
+      el("td", {}, el("span", { class: "badge badge-navy" }, e.format)),
+      el("td", {}, el("span", { class: "badge " + (e.published ? "badge-success" : "badge-neutral") }, e.published ? "Published" : "Draft")),
+      el("td", {}, el("button", { class: "btn btn-sm btn-ghost", onclick: () => { e.published = !e.published; renderEventsSimple(); showToast(`"${e.name}" is now ${e.published ? "published" : "a draft"}.`, "success"); } }, e.published ? "Unpublish" : "Publish")),
+    ]));
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+function openPEventForm() {
+  const panel = byId("pevent-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const nameInput = el("input", { type: "text", placeholder: "Event name" });
+  const dateInput = el("input", { type: "date", value: TODAY });
+  const formatSelect = el("select", {}, ["In-person", "Webinar", "Online"].map((f) => el("option", { value: f }, f)));
+  panel.append(
+    el("h3", {}, "Add event"),
+    el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Date"), dateInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Format"), formatSelect]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          if (!nameInput.value.trim()) { showToast("Event name is required.", "info"); return; }
+          state.events.push({ id: genId("e"), name: nameInput.value.trim(), date: dateInput.value, format: formatSelect.value, registrations: 0, audience: "", published: false });
+          panel.style.display = "none";
+          showToast("Event added as a draft.", "success");
+          renderEventsSimple();
+        },
+      }, "Save"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ])
+  );
+}
+function renderTrainingSimple() {
+  const moodle = INTEGRATIONS.find((i) => i.id === "moodle");
+  byId("ptraining-sync-status").textContent = state.trainingsSynced ? "Synced with Moodle — up to date" : `Last synced from Moodle: ${moodle.lastSync}`;
+  byId("ptraining-sync-btn").onclick = () => {
+    if (state.trainingsSynced) { showToast("Already up to date with Moodle.", "info"); return; }
+    TRAININGS_PENDING_SYNC.forEach((t) => state.trainings.push({ ...t }));
+    state.trainingsSynced = true;
+    logSync(`Moodle sync: ${TRAININGS_PENDING_SYNC.length} new training record(s) pulled in`);
+    showToast(`${TRAININGS_PENDING_SYNC.length} new training record(s) synced from Moodle.`, "success");
+    renderTrainingSimple();
+  };
+  byId("ptraining-add-btn").onclick = () => openPTrainingForm();
+
+  const wrap = byId("ptraining-table");
+  wrap.innerHTML = "";
+  const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Course", "Date", "Format", "Hours", "Published", ""].map((h) => el("th", {}, h))))]);
+  const tbody = el("tbody");
+  state.trainings.forEach((t) => {
+    tbody.appendChild(el("tr", {}, [
+      el("td", { class: "cell-primary" }, t.name),
+      el("td", {}, fmtDate(t.date)),
+      el("td", {}, el("span", { class: "badge badge-teal" }, t.format)),
+      el("td", {}, t.hours + "h"),
+      el("td", {}, el("span", { class: "badge " + (t.published ? "badge-success" : "badge-neutral") }, t.published ? "Published" : "Draft")),
+      el("td", {}, el("button", { class: "btn btn-sm btn-ghost", onclick: () => { t.published = !t.published; renderTrainingSimple(); showToast(`"${t.name}" is now ${t.published ? "published" : "a draft"}.`, "success"); } }, t.published ? "Unpublish" : "Publish")),
+    ]));
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+function openPTrainingForm() {
+  const panel = byId("ptraining-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const nameInput = el("input", { type: "text", placeholder: "Course name" });
+  const dateInput = el("input", { type: "date", value: TODAY });
+  const formatSelect = el("select", {}, ["Certification", "Short course", "Info session"].map((f) => el("option", { value: f }, f)));
+  const hoursInput = el("input", { type: "number", value: "8", min: "1" });
+  panel.append(
+    el("h3", {}, "Add training"),
+    el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Date"), dateInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Format"), formatSelect]),
+    el("div", { class: "form-row" }, [el("label", {}, "Hours"), hoursInput]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          if (!nameInput.value.trim()) { showToast("Course name is required.", "info"); return; }
+          state.trainings.push({ id: genId("t"), name: nameInput.value.trim(), date: dateInput.value, format: formatSelect.value, hours: Number(hoursInput.value) || 1, registrations: 0, audience: "", published: false });
+          panel.style.display = "none";
+          showToast("Training added as a draft.", "success");
+          renderTrainingSimple();
+        },
+      }, "Save"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ])
+  );
+}
+
+// ---------------------------------------------------------- platform benefits
+function renderBenefitsSimple() {
+  byId("pbenefits-count").textContent = `${state.benefits.length} benefits · ${state.benefits.filter((b) => b.status === "Published").length} published, ${state.benefits.filter((b) => b.status === "Draft").length} draft`;
+  byId("pbenefit-add-btn").onclick = () => openBenefitFormSimple(null);
+  const grid = byId("pbenefits-grid");
+  grid.innerHTML = "";
+  state.benefits.forEach((b) => {
+    grid.append(
+      el("div", { class: "benefit-card" }, [
+        el("div", { class: "benefit-card__top" }, [
+          el("span", { class: "badge badge-navy" }, b.category),
+          el("span", { class: "badge " + (b.status === "Published" ? "badge-success" : "badge-warning") }, b.status),
+        ]),
+        el("h3", {}, b.title),
+        el("p", { class: "benefit-card__desc" }, b.description),
+        el("div", { class: "benefit-card__meta" }, `Updated ${fmtDate(b.updated)}`),
+        el("div", { class: "benefit-card__actions" }, [
+          el("button", { class: "btn btn-sm", onclick: () => openBenefitFormSimple(b.id) }, "Edit"),
+          el("button", { class: "btn btn-sm", onclick: () => { b.status = b.status === "Published" ? "Draft" : "Published"; b.updated = TODAY; renderBenefitsSimple(); showToast(`"${b.title}" is now ${b.status}.`, "success"); } }, b.status === "Published" ? "Unpublish" : "Publish"),
+        ]),
+      ])
+    );
+  });
+}
+function openBenefitFormSimple(id) {
+  const b = id ? state.benefits.find((x) => x.id === id) : { title: "", category: BENEFIT_CATEGORIES[0], description: "", tiers: [], status: "Draft" };
+  const panel = byId("pbenefit-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const titleInput = el("input", { type: "text", value: b.title, placeholder: "Benefit title" });
+  const categorySelect = el("select", {}, BENEFIT_CATEGORIES.map((c) => el("option", { value: c }, c)));
+  categorySelect.value = b.category;
+  const descInput = el("textarea", { rows: "3", placeholder: "Description" }, b.description);
+  panel.append(
+    el("h3", {}, id ? "Edit benefit" : "Add benefit"),
+    el("div", { class: "form-row" }, [el("label", {}, "Title"), titleInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Category"), categorySelect]),
+    el("div", { class: "form-row" }, [el("label", {}, "Description"), descInput]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          const payload = { title: titleInput.value.trim() || "Untitled benefit", category: categorySelect.value, description: descInput.value.trim(), updated: TODAY };
+          if (id) Object.assign(b, payload);
+          else state.benefits.unshift({ id: genId("b"), status: "Draft", tiers: [], ...payload });
+          panel.style.display = "none";
+          showToast(id ? "Benefit updated." : "Benefit added as draft.", "success");
+          renderBenefitsSimple();
+        },
+      }, "Save"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ])
+  );
 }
 
 // ------------------------------------------------------------ lifecycle comms
@@ -1683,8 +1924,21 @@ function closeDrawer() {
 function closeSettingsPopover() { byId("settings-popover").classList.remove("open"); }
 function toggleSettingsPopover(e) { e.stopPropagation(); byId("settings-popover").classList.toggle("open"); }
 
+// ---------------------------------------------------------------- app mode
+function setAppMode(mode) {
+  state.appMode = mode;
+  document.querySelectorAll(".mode-toggle__btn").forEach((b) => b.classList.toggle("active", b.dataset.appmode === mode));
+  document.querySelectorAll(".sidebar__nav .nav-btn").forEach((b) => {
+    const m = b.dataset.mode;
+    b.style.display = (m === "both" || m === mode) ? "" : "none";
+  });
+  byId("settings-wrap").style.display = mode === "crm" ? "" : "none";
+  showView(mode === "crm" ? "action" : "organizations");
+}
+
 // --------------------------------------------------------------------- init
 document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".mode-toggle__btn").forEach((btn) => btn.addEventListener("click", () => setAppMode(btn.dataset.appmode)));
   document.querySelectorAll(".sidebar__nav .nav-btn").forEach((btn) => btn.addEventListener("click", () => showView(btn.dataset.view)));
   document.querySelectorAll(".settings-popover button").forEach((btn) => btn.addEventListener("click", () => showView(btn.dataset.view)));
   document.querySelectorAll("[data-goto]").forEach((btn) => btn.addEventListener("click", () => {
@@ -1702,5 +1956,5 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", closeSettingsPopover);
   byId("drawer-close").addEventListener("click", closeDrawer);
   byId("drawer-overlay").addEventListener("click", closeDrawer);
-  showView("action");
+  setAppMode("crm");
 });
