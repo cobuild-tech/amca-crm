@@ -30,9 +30,7 @@
       <button class="nav-btn" data-view="newsletter">Newsletter</button>
       <button class="nav-btn" data-view="events">Events</button>
       <button class="nav-btn" data-view="training">Training</button>
-      <button class="nav-btn" data-view="benefits">Benefits</button>
       <button class="nav-btn" data-view="cms">Website</button>
-      <button class="nav-btn" data-view="docgen">Document Generator</button>
     </nav>
 
     <div class="sidebar__footer">
@@ -57,7 +55,7 @@
     <section class="view active" id="view-action" data-view="action">
       <div class="view-head">
         <h1>Action Center</h1>
-        <p>What needs you today — pulled live from the pipeline, renewals, invoices and engagement lists below.</p>
+        <p>What needs you today — pulled live from the pipeline, renewals, invoices and engagement lists below. Every item has a default assignee; reassign with the dropdown.</p>
       </div>
       <div id="action-items" class="action-list"></div>
     </section>
@@ -100,16 +98,19 @@
       </div>
     </section>
 
-    <!-- MEMBERS (Pipeline / Renewals / Directory) -->
+    <!-- MEMBERS (Pipeline / Renewals / Directory / Benefits / Documents / Handbook) -->
     <section class="view" id="view-members" data-view="members">
       <div class="view-head">
         <h1>Members</h1>
-        <p>Companies are members — the new-member pipeline, renewals, and the full member directory, together.</p>
+        <p>Everything about being, and becoming, a member — the pipeline, renewals, directory, benefits, generated documents, and the handbook entry point.</p>
       </div>
       <div class="subtabs" data-section="members">
         <button class="subtab-btn" data-subtab="members-pipeline">Pipeline</button>
         <button class="subtab-btn" data-subtab="members-renewals">Renewals</button>
         <button class="subtab-btn" data-subtab="members-directory">Directory</button>
+        <button class="subtab-btn" data-subtab="members-benefits">Benefits</button>
+        <button class="subtab-btn" data-subtab="members-documents">Documents</button>
+        <button class="subtab-btn" data-subtab="members-handbook">Handbook</button>
       </div>
 
       <div id="members-pipeline" class="subtab-panel">
@@ -143,6 +144,32 @@
         </div>
         <div id="companies-table" class="data-table"></div>
       </div>
+
+      <div id="members-benefits" class="subtab-panel">
+        <p class="subtab-intro">Events/Training benefits need a member discount rate before they can publish. Third-party benefits need steps to avail, eligibility and the discount amount.</p>
+        <div class="toolbar">
+          <span class="cell-muted" id="benefits-count"></span>
+          <button class="btn btn-primary" id="benefit-add-btn" style="margin-left:auto;">+ Add benefit</button>
+        </div>
+        <div id="benefit-form-panel" class="panel" style="display:none;"></div>
+        <div id="benefits-grid" class="benefits-grid"></div>
+      </div>
+
+      <div id="members-documents" class="subtab-panel">
+        <div class="panel">
+          <div class="panel__head"><h2>Templates</h2></div>
+          <div id="docgen-templates" class="workflow-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel__head"><h2>Generate a document</h2></div>
+          <div id="docgen-form" class="campaign-builder"></div>
+          <div id="docgen-preview" class="doc-preview" style="display:none;"></div>
+        </div>
+      </div>
+
+      <div id="members-handbook" class="subtab-panel">
+        <div id="handbook-panel"></div>
+      </div>
     </section>
 
     <!-- NON-MEMBERS (Contacts / Lists / Campaigns) -->
@@ -158,13 +185,30 @@
       </div>
 
       <div id="nonmembers-contacts" class="subtab-panel">
+        <div class="toolbar">
+          <input type="search" id="contact-search" placeholder="Search contacts…" />
+          <select id="contact-filter-list">
+            <option value="">All contacts</option>
+            <option value="__none__">No list</option>
+          </select>
+          <button class="btn" id="contact-bulk-btn">Bulk upload</button>
+          <button class="btn btn-primary" id="contact-add-btn">+ Add contact</button>
+        </div>
+        <div id="contact-form-panel" class="panel" style="display:none;"></div>
         <div id="nonmembers-list" class="data-table"></div>
       </div>
+
       <div id="nonmembers-lists" class="subtab-panel">
+        <div class="toolbar">
+          <button class="btn btn-primary" id="list-add-btn" style="margin-left:auto;">+ Add list</button>
+        </div>
+        <div id="list-form-panel" class="panel" style="display:none;"></div>
         <div id="nonmember-lists-grid" class="stat-grid"></div>
       </div>
+
       <div id="nonmembers-campaigns" class="subtab-panel">
         <p class="subtab-intro">Sends only go to contacts who've given marketing consent and haven't unsubscribed.</p>
+        <div id="nonmember-campaign-summary" class="stat-grid"></div>
         <div class="panel">
           <div class="panel__head"><h2>New campaign</h2></div>
           <div id="nonmember-campaign-builder" class="campaign-builder"></div>
@@ -176,19 +220,45 @@
       </div>
     </section>
 
-    <!-- NEWSLETTER (generic / mixed audience, full analytics) -->
+    <!-- NEWSLETTER (Send / History / Subscribers / Unsubscribe Page) -->
     <section class="view" id="view-newsletter" data-view="newsletter">
       <div class="view-head">
-        <h1>Newsletter &amp; Campaigns</h1>
-        <p>Generic, all-audience sends — members, non-members, or mixed — synced through Mailchimp, with deliverability and engagement analytics for every send.</p>
+        <h1>Newsletter</h1>
+        <p>The combined send — members, non-member lists, and site subscribers together — plus subscriber management and the public unsubscribe page.</p>
       </div>
-      <div class="panel">
-        <div class="panel__head"><h2>Send a campaign</h2></div>
-        <div id="campaign-builder" class="campaign-builder"></div>
+      <div class="subtabs" data-section="newsletter">
+        <button class="subtab-btn" data-subtab="newsletter-send">Send</button>
+        <button class="subtab-btn" data-subtab="newsletter-history">History &amp; Analytics</button>
+        <button class="subtab-btn" data-subtab="newsletter-subscribers">Subscribers</button>
+        <button class="subtab-btn" data-subtab="newsletter-unsub">Unsubscribe Page</button>
       </div>
-      <div class="panel">
-        <div class="panel__head"><h2>All campaign history &amp; analytics</h2></div>
-        <div id="campaigns-table" class="data-table"></div>
+
+      <div id="newsletter-send" class="subtab-panel">
+        <div class="panel">
+          <div class="panel__head"><h2>Compose</h2></div>
+          <div id="campaign-builder" class="campaign-builder"></div>
+        </div>
+      </div>
+
+      <div id="newsletter-history" class="subtab-panel">
+        <div id="campaign-summary-strip" class="stat-grid"></div>
+        <div class="panel">
+          <div class="panel__head"><h2>All campaign history &amp; analytics</h2></div>
+          <div id="campaigns-table" class="data-table"></div>
+        </div>
+      </div>
+
+      <div id="newsletter-subscribers" class="subtab-panel">
+        <div class="toolbar">
+          <button class="btn btn-primary" id="subscriber-add-btn" style="margin-left:auto;">+ Add subscriber</button>
+        </div>
+        <div id="subscriber-form-panel" class="panel" style="display:none;"></div>
+        <div id="subscribers-table" class="data-table"></div>
+      </div>
+
+      <div id="newsletter-unsub" class="subtab-panel">
+        <p class="subtab-intro">This is the copy shown on the public unsubscribe-confirmation page.</p>
+        <div id="unsub-editor" class="panel"></div>
       </div>
     </section>
 
@@ -196,8 +266,14 @@
     <section class="view" id="view-events" data-view="events">
       <div class="view-head">
         <h1>Events</h1>
-        <p>Conferences, webinars and networking nights — open to members and non-members alike.</p>
+        <p>Conferences, webinars and networking nights — open to members and non-members alike. Normally synced from CEvent; can also be created here for flexibility.</p>
       </div>
+      <div class="toolbar">
+        <span class="cell-muted" id="events-sync-status"></span>
+        <button class="btn" id="events-sync-btn" style="margin-left:auto;">Sync now (CEvent)</button>
+        <button class="btn btn-primary" id="event-add-btn">+ Add event</button>
+      </div>
+      <div id="event-form-panel" class="panel" style="display:none;"></div>
       <div id="events-table" class="data-table"></div>
     </section>
 
@@ -205,50 +281,25 @@
     <section class="view" id="view-training" data-view="training">
       <div class="view-head">
         <h1>Training &amp; Certification</h1>
-        <p>Courses and certifications, including the non-member career-pathway intakes that feed the pipeline.</p>
+        <p>Courses and certifications, including the non-member career-pathway intakes that feed the pipeline. Normally synced from CEvent; can also be created here for flexibility.</p>
       </div>
+      <div class="toolbar">
+        <span class="cell-muted" id="training-sync-status"></span>
+        <button class="btn" id="training-sync-btn" style="margin-left:auto;">Sync now (CEvent)</button>
+        <button class="btn btn-primary" id="training-add-btn">+ Add training</button>
+      </div>
+      <div id="training-form-panel" class="panel" style="display:none;"></div>
       <div id="training-table" class="data-table"></div>
     </section>
 
-    <!-- BENEFITS CMS -->
-    <section class="view" id="view-benefits" data-view="benefits">
-      <div class="view-head">
-        <h1>Benefits</h1>
-        <p>The content behind the benefits-walkthrough email and the member portal's benefits page — manage what each tier gets.</p>
-      </div>
-      <div class="toolbar">
-        <span class="cell-muted" id="benefits-count"></span>
-        <button class="btn btn-primary" id="benefit-add-btn" style="margin-left:auto;">+ Add benefit</button>
-      </div>
-      <div id="benefit-form-panel" class="panel" style="display:none;"></div>
-      <div id="benefits-grid" class="benefits-grid"></div>
-    </section>
-
-    <!-- WEBSITE (CMS + Handbook) -->
+    <!-- WEBSITE CMS -->
     <section class="view" id="view-cms" data-view="cms">
       <div class="view-head">
         <h1>Website</h1>
-        <p>Everything published to amca.com.au — guides, blog, banners, awards, initiatives, impact updates, careers, and the member handbook entry point. Events &amp; Training keep their own publish toggle in their tabs.</p>
+        <p>Everything published to amca.com.au — guides, blog, banners, awards, initiatives, impact updates and careers. Events, Training and the Handbook are managed in their own tabs.</p>
       </div>
       <div class="subtabs" id="cms-subtabs" data-section="cms"></div>
       <div id="cms-panels"></div>
-    </section>
-
-    <!-- DOCUMENT GENERATOR -->
-    <section class="view" id="view-docgen" data-view="docgen">
-      <div class="view-head">
-        <h1>Document Generator</h1>
-        <p>Templates staff can edit, and a quick way to generate a merged document for any company.</p>
-      </div>
-      <div class="panel">
-        <div class="panel__head"><h2>Templates</h2></div>
-        <div id="docgen-templates" class="workflow-list"></div>
-      </div>
-      <div class="panel">
-        <div class="panel__head"><h2>Generate a document</h2></div>
-        <div id="docgen-form" class="campaign-builder"></div>
-        <div id="docgen-preview" class="doc-preview" style="display:none;"></div>
-      </div>
     </section>
 
     <!-- AUTOMATION SETTINGS (via gear) -->
@@ -275,7 +326,7 @@
     <section class="view" id="view-integrations" data-view="integrations">
       <div class="view-head">
         <h1>Integrations</h1>
-        <p>The CRM is the hub. Xero, Mailchimp and the website all read from — and write back to — one source of truth.</p>
+        <p>The CRM is the hub. Xero, Mailchimp, CEvent and the website all read from — and write back to — one source of truth.</p>
       </div>
       <div id="integrations-grid" class="stat-grid"></div>
       <div class="panel">

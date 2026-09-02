@@ -16,19 +16,27 @@ const state = {
   benefits: JSON.parse(JSON.stringify(BENEFITS)),
   workflows: JSON.parse(JSON.stringify(WORKFLOWS)),
   campaigns: JSON.parse(JSON.stringify(CAMPAIGNS)),
+  emailTemplates: JSON.parse(JSON.stringify(EMAIL_TEMPLATES)),
   nonMembers: JSON.parse(JSON.stringify(NON_MEMBERS)),
+  nonMemberLists: JSON.parse(JSON.stringify(NON_MEMBER_LISTS)),
+  subscribers: JSON.parse(JSON.stringify(SUBSCRIBERS)),
+  unsubscribePage: JSON.parse(JSON.stringify(UNSUBSCRIBE_PAGE)),
   cms: JSON.parse(JSON.stringify(CMS_CONTENT)),
   events: JSON.parse(JSON.stringify(EVENTS)),
   trainings: JSON.parse(JSON.stringify(TRAININGS)),
+  eventsSynced: false,
+  trainingsSynced: false,
   docTemplates: JSON.parse(JSON.stringify(DOC_TEMPLATES)),
   view: "action",
-  subtab: { members: "members-pipeline", nonmembers: "nonmembers-contacts", renewal: "renewal-board", cms: "cms-guides" },
+  subtab: { members: "members-pipeline", nonmembers: "nonmembers-contacts", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-send" },
   editingBenefitId: null,
   dismissedActions: new Set(),
+  actionAssignee: {},
   syncLog: [
     { date: "2026-09-01 08:14", type: "sync", label: "Xero → CRM: 3 invoice status updates pulled" },
     { date: "2026-09-01 07:50", type: "sync", label: "Mailchimp → CRM: list counts reconciled (2,184 contacts)" },
     { date: "2026-08-31 22:00", type: "sync", label: "CRM → Website: nightly publish check completed" },
+    { date: "2026-08-30 06:00", type: "sync", label: "CEvent → CRM: events & training registrations reconciled" },
   ],
 };
 
@@ -57,6 +65,7 @@ function addYearsISO(iso, n) {
   d.setFullYear(d.getFullYear() + n);
   return d.toISOString().slice(0, 10);
 }
+function genId(prefix) { return prefix + (Math.floor(Math.random() * 90000) + 10000); }
 function byId(id) { return document.getElementById(id); }
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -97,6 +106,13 @@ function invoiceBadge(status) {
     overdue: ["Overdue", "badge-danger"],
   };
   return map[status] || ["—", "badge-neutral"];
+}
+function statCard(label, value, sub, accentClass) {
+  return el("div", { class: "stat-card " + accentClass }, [
+    el("div", { class: "stat-card__label" }, label),
+    el("div", { class: "stat-card__value" }, String(value)),
+    el("div", { class: "stat-card__sub" }, sub),
+  ]);
 }
 
 // -------------------------------------------------------------- status logic
@@ -145,12 +161,10 @@ function renderView(viewId) {
     case "dashboard": return renderDashboard();
     case "members": return switchSubtab("members", state.subtab.members);
     case "nonmembers": return switchSubtab("nonmembers", state.subtab.nonmembers);
-    case "newsletter": return renderNewsletterView();
+    case "newsletter": return switchSubtab("newsletter", state.subtab.newsletter);
     case "events": return renderEvents();
     case "training": return renderTraining();
-    case "benefits": return renderBenefits();
     case "cms": return renderCmsSection();
-    case "docgen": return renderDocGen();
     case "automation": return renderAutomation();
     case "integrations": return renderIntegrations();
     case "users": return renderUsers();
@@ -174,10 +188,18 @@ function switchSubtab(section, id) {
     if (id === "members-pipeline") renderPipelineNew();
     else if (id === "members-renewals") switchSubtab("renewal", state.subtab.renewal);
     else if (id === "members-directory") renderCompanies();
+    else if (id === "members-benefits") renderBenefits();
+    else if (id === "members-documents") renderDocGen();
+    else if (id === "members-handbook") renderHandbookPanel();
   } else if (section === "nonmembers") {
     if (id === "nonmembers-contacts") renderNonMemberContacts();
     else if (id === "nonmembers-lists") renderNonMemberListsGrid();
     else if (id === "nonmembers-campaigns") renderNonMemberCampaignsTab();
+  } else if (section === "newsletter") {
+    if (id === "newsletter-send") renderNewsletterSend();
+    else if (id === "newsletter-history") renderNewsletterHistory();
+    else if (id === "newsletter-subscribers") renderSubscribers();
+    else if (id === "newsletter-unsub") renderUnsubEditor();
   } else if (section === "cms") {
     renderCmsPanel(id.replace("cms-", ""));
   }
@@ -190,41 +212,41 @@ function computeActionItems() {
     if (c.memberState === "prospect") {
       if (c.onboardingStage === "enquiry") {
         const d = daysSince(c.timeline[0]?.date) ?? 0;
-        items.push({ id: "ac-enq-" + c.id, severity: d >= 4 ? "high" : "medium", title: `Qualify enquiry: ${c.name}`, detail: `In "Enquiry" for ${d} day${d === 1 ? "" : "s"} — owner ${c.owner}.`, companyId: c.id, action: { label: "Open pipeline", goto: "members", gotoSubtab: "members-pipeline" } });
+        items.push({ id: "ac-enq-" + c.id, severity: d >= 4 ? "high" : "medium", title: `Qualify enquiry: ${c.name}`, detail: `In "Enquiry" for ${d} day${d === 1 ? "" : "s"} — owner ${c.owner}.`, companyId: c.id, assignee: c.owner, action: { label: "Open pipeline", goto: "members", gotoSubtab: "members-pipeline" } });
       }
       if (c.onboardingStage === "proposal") {
         const d = daysSince(c.timeline[0]?.date) ?? 0;
-        items.push({ id: "ac-prop-" + c.id, severity: d >= 5 ? "high" : "low", title: `Follow up on proposal: ${c.name}`, detail: `Proposal sent ${d} day${d === 1 ? "" : "s"} ago, no response yet.`, companyId: c.id, action: { label: "Open pipeline", goto: "members", gotoSubtab: "members-pipeline" } });
+        items.push({ id: "ac-prop-" + c.id, severity: d >= 5 ? "high" : "low", title: `Follow up on proposal: ${c.name}`, detail: `Proposal sent ${d} day${d === 1 ? "" : "s"} ago, no response yet.`, companyId: c.id, assignee: c.owner, action: { label: "Open pipeline", goto: "members", gotoSubtab: "members-pipeline" } });
       }
       if (c.onboardingStage === "invoice" && c.xero?.invoiceStatus === "sent") {
-        items.push({ id: "ac-inv-" + c.id, severity: "medium", title: `Chase membership invoice: ${c.name}`, detail: `${c.xero.invoiceNo} (${fmtMoney(c.xero.amount)}) sent, awaiting payment.`, companyId: c.id, action: { label: "Mark paid", run: () => markProspectInvoicePaid(c.id) } });
+        items.push({ id: "ac-inv-" + c.id, severity: "medium", title: `Chase membership invoice: ${c.name}`, detail: `${c.xero.invoiceNo} (${fmtMoney(c.xero.amount)}) sent, awaiting payment.`, companyId: c.id, assignee: c.owner, action: { label: "Mark paid", run: () => markProspectInvoicePaid(c.id) } });
       }
       if (c.onboardingStage === "payment") {
-        items.push({ id: "ac-act-" + c.id, severity: "high", title: `Activate membership: ${c.name}`, detail: `Payment received — welcome sequence is ready to send.`, companyId: c.id, action: { label: "Activate", run: () => activateCompany(c.id) } });
+        items.push({ id: "ac-act-" + c.id, severity: "high", title: `Activate membership: ${c.name}`, detail: `Payment received — welcome sequence is ready to send.`, companyId: c.id, assignee: c.owner, action: { label: "Activate", run: () => activateCompany(c.id) } });
       }
     }
     if (c.memberState === "active") {
       const rs = getRenewalBoardStage(c);
       const d = daysUntil(c.renewalDate);
       if (rs === "upcoming" && d != null && d <= 30) {
-        items.push({ id: "ac-ren-" + c.id, severity: "high", title: `Raise renewal invoice: ${c.name}`, detail: `Renews in ${d} day${d === 1 ? "" : "s"} (${fmtDate(c.renewalDate)}), no invoice raised yet.`, companyId: c.id, action: { label: "Raise invoice", run: () => raiseRenewalInvoice(c.id) } });
+        items.push({ id: "ac-ren-" + c.id, severity: "high", title: `Raise renewal invoice: ${c.name}`, detail: `Renews in ${d} day${d === 1 ? "" : "s"} (${fmtDate(c.renewalDate)}), no invoice raised yet.`, companyId: c.id, assignee: c.owner, action: { label: "Raise invoice", run: () => raiseRenewalInvoice(c.id) } });
       } else if (rs === "invoice_sent" && d != null && d <= 10) {
-        items.push({ id: "ac-follow-" + c.id, severity: "high", title: `Follow up before lapse: ${c.name}`, detail: `Renewal invoice sent, ${d} day${d === 1 ? "" : "s"} left, still unpaid.`, companyId: c.id, action: { label: "Open renewals", goto: "members", gotoSubtab: "members-renewals" } });
+        items.push({ id: "ac-follow-" + c.id, severity: "high", title: `Follow up before lapse: ${c.name}`, detail: `Renewal invoice sent, ${d} day${d === 1 ? "" : "s"} left, still unpaid.`, companyId: c.id, assignee: c.owner, action: { label: "Open renewals", goto: "members", gotoSubtab: "members-renewals" } });
       }
       if (c.xero?.invoiceStatus === "overdue") {
-        items.push({ id: "ac-overdue-" + c.id, severity: "high", title: `Overdue payment: ${c.name}`, detail: `${c.xero.invoiceNo} overdue — ${c.xero.paymentStatus}.`, companyId: c.id, action: { label: "Open renewals", goto: "members", gotoSubtab: "members-renewals" } });
+        items.push({ id: "ac-overdue-" + c.id, severity: "high", title: `Overdue payment: ${c.name}`, detail: `${c.xero.invoiceNo} overdue — ${c.xero.paymentStatus}.`, companyId: c.id, assignee: c.owner, action: { label: "Open renewals", goto: "members", gotoSubtab: "members-renewals" } });
       }
     }
   });
   state.benefits.forEach((b) => {
-    if (b.status === "Draft") items.push({ id: "ac-benefit-" + b.id, severity: "low", title: `Review draft benefit: ${b.title}`, detail: `Last updated ${fmtDate(b.updated)} — publish when ready.`, action: { label: "Open benefits", goto: "benefits" } });
+    if (b.status === "Draft") items.push({ id: "ac-benefit-" + b.id, severity: "low", title: `Review draft benefit: ${b.title}`, detail: `Last updated ${fmtDate(b.updated)} — publish when ready.`, assignee: "Brendan Wills", action: { label: "Open benefits", goto: "members", gotoSubtab: "members-benefits" } });
   });
   state.campaigns.forEach((cm) => {
-    if (cm.status === "Scheduled") items.push({ id: "ac-camp-" + cm.id, severity: "medium", title: `Scheduled campaign due: ${cm.name}`, detail: `Set to send ${fmtDate(cm.sentDate)} to "${cm.segment}".`, action: { label: "Open newsletter", goto: "newsletter" } });
+    if (cm.status === "Scheduled") items.push({ id: "ac-camp-" + cm.id, severity: "medium", title: `Scheduled campaign due: ${cm.name}`, detail: `Set to send ${fmtDate(cm.sentDate)} to "${cm.segment}".`, assignee: "Brendan Wills", action: { label: "Open newsletter", goto: "newsletter" } });
   });
   Object.entries(state.cms).forEach(([key, items_]) => {
     items_.filter((x) => x.status === "Draft").forEach((x) => {
-      items.push({ id: "ac-cms-" + x.id, severity: "low", title: `Review draft content: ${x.title}`, detail: `${CMS_TYPES.find((t) => t.key === key)?.label || key} — last updated ${fmtDate(x.updated)}.`, action: { label: "Open website", goto: "cms" } });
+      items.push({ id: "ac-cms-" + x.id, severity: "low", title: `Review draft content: ${x.title}`, detail: `${CMS_TYPES.find((t) => t.key === key)?.label || key} — last updated ${fmtDate(x.updated)}.`, assignee: "Brendan Wills", action: { label: "Open website", goto: "cms" } });
     });
   });
   return items.filter((i) => !state.dismissedActions.has(i.id)).sort((a, b) => {
@@ -249,12 +271,17 @@ function renderActionCenter() {
     }
     actions.append(el("button", { class: "btn btn-sm btn-ghost", onclick: () => { state.dismissedActions.add(item.id); renderActionCenter(); showToast("Marked as done.", "success"); } }, "Mark done"));
 
+    const assigneeSelect = el("select", { class: "assignee-select" }, USERS.map((u) => el("option", { value: u.name }, u.name)));
+    assigneeSelect.value = state.actionAssignee[item.id] || item.assignee || "Brendan Wills";
+    assigneeSelect.onchange = () => { state.actionAssignee[item.id] = assigneeSelect.value; showToast(`Reassigned to ${assigneeSelect.value}.`, "info"); };
+
     wrap.append(
       el("div", { class: "action-item severity-" + item.severity }, [
         el("div", { class: "action-item__main" }, [
           el("div", { class: "action-item__title", onclick: item.companyId ? () => openDrawer(item.companyId) : null }, item.title),
           el("div", { class: "action-item__detail" }, item.detail),
         ]),
+        el("div", { class: "action-item__assignee" }, [el("span", { class: "cell-muted" }, "Assigned to"), assigneeSelect]),
         actions,
       ])
     );
@@ -357,13 +384,6 @@ function renderDashboard() {
       ])
     );
   });
-}
-function statCard(label, value, sub, accentClass) {
-  return el("div", { class: "stat-card " + accentClass }, [
-    el("div", { class: "stat-card__label" }, label),
-    el("div", { class: "stat-card__value" }, String(value)),
-    el("div", { class: "stat-card__sub" }, sub),
-  ]);
 }
 
 // -------------------------------------------------------------- new members
@@ -590,98 +610,142 @@ function renderCompanies() {
   draw();
 }
 
-// -------------------------------------------------------- campaigns (shared)
-function segmentOptionsFor(audience) {
-  if (audience === "Members") return ["All Active Members", "Contractor Members", "Corporate Members", "Renewal-Due Members"];
-  if (audience === "Non-members") return NON_MEMBER_LISTS.map((l) => l.name);
-  return ["All Contacts"];
+// -------------------------------------------------------- campaign composer
+function membersMatchingCriteria(criteria) {
+  if (!criteria.size) return [];
+  return state.companies.filter((c) => c.memberState === "active").filter((c) => {
+    if (criteria.has("all")) return true;
+    if (criteria.has("contractor") && c.category === "Contractor Member") return true;
+    if (criteria.has("corporate") && c.category === "Corporate Member") return true;
+    if (criteria.has("renewal_due") && getRenewalBoardStage(c)) return true;
+    return false;
+  });
 }
-function nonMemberSegmentContacts(segment) {
-  const list = NON_MEMBER_LISTS.find((l) => l.name === segment);
-  if (!list) return [];
-  let contacts = state.nonMembers.filter((n) => n.tag === list.tag);
-  if (list.tag === "Former Member") {
-    const lapsedAsContacts = state.companies.filter((c) => c.memberState === "lapsed").map((c) => ({ consent: true, unsubscribed: false }));
-    contacts = contacts.concat(lapsedAsContacts);
-  }
-  return contacts;
+function nonMemberContactsMatchingLists(listIds) {
+  if (!listIds.size) return [];
+  const contacts = state.nonMembers.filter((n) => n.lists.some((l) => listIds.has(l)));
+  const extra = listIds.has("l3") ? state.companies.filter((c) => c.memberState === "lapsed").map(() => ({ consent: true, unsubscribed: false })) : [];
+  return contacts.concat(extra);
 }
-function segmentRecipientInfo(audience, segment) {
-  const activeCompanies = state.companies.filter((c) => c.memberState === "active");
-  const peopleIn = (cats) => activeCompanies.filter((c) => !cats || cats.includes(c.category)).reduce((s, c) => s + c.people.length, 0);
-  if (audience === "Members") {
-    let total;
-    if (segment === "Contractor Members") total = peopleIn(["Contractor Member"]);
-    else if (segment === "Corporate Members") total = peopleIn(["Corporate Member"]);
-    else if (segment === "Renewal-Due Members") total = activeCompanies.filter((c) => getRenewalBoardStage(c)).reduce((s, c) => s + c.people.length, 0);
-    else total = peopleIn(null);
-    return { total, sendable: total, blocked: 0 };
+function composerRecipientInfo(selection) {
+  const members = membersMatchingCriteria(selection.memberCriteria);
+  const memberCount = members.reduce((s, c) => s + c.people.length, 0);
+  const nmContacts = nonMemberContactsMatchingLists(selection.nonMemberLists);
+  const nmSendable = nmContacts.filter((c) => c.consent && !c.unsubscribed).length;
+  const nmBlocked = nmContacts.length - nmSendable;
+  let subTotal = 0, subSendable = 0;
+  if (selection.includeSubscribers) {
+    subTotal = state.subscribers.length;
+    subSendable = state.subscribers.filter((s) => !s.unsubscribed).length;
   }
-  if (audience === "Non-members") {
-    const contacts = nonMemberSegmentContacts(segment);
-    const sendable = contacts.filter((c) => c.consent && !c.unsubscribed).length;
-    return { total: contacts.length, sendable, blocked: contacts.length - sendable };
-  }
-  const memberTotal = peopleIn(null);
-  const nonMemberSendable = state.nonMembers.filter((n) => n.consent && !n.unsubscribed).length;
-  const nonMemberTotal = state.nonMembers.length;
-  return { total: memberTotal + nonMemberTotal, sendable: memberTotal + nonMemberSendable, blocked: nonMemberTotal - nonMemberSendable };
+  return { total: memberCount + nmContacts.length + subTotal, sendable: memberCount + nmSendable + subSendable, blocked: nmBlocked + (subTotal - subSendable) };
 }
-function buildCampaignBuilder(container, opts) {
+function describeSelection(selection) {
+  const parts = [];
+  const memberLabels = { all: "All Active Members", contractor: "Contractor Members", corporate: "Corporate Members", renewal_due: "Renewal-Due Members" };
+  selection.memberCriteria.forEach((k) => parts.push(memberLabels[k]));
+  selection.nonMemberLists.forEach((id) => parts.push(state.nonMemberLists.find((l) => l.id === id)?.name || id));
+  if (selection.includeSubscribers) parts.push("Site Subscribers");
+  return parts.length ? parts.join(", ") : "No audience selected";
+}
+function audienceTypeFor(selection) {
+  const flags = [selection.memberCriteria.size > 0, selection.nonMemberLists.size > 0, !!selection.includeSubscribers];
+  const count = flags.filter(Boolean).length;
+  if (count > 1) return "Mixed";
+  if (flags[0]) return "Members";
+  if (flags[1]) return "Non-members";
+  if (flags[2]) return "Subscribers";
+  return "None";
+}
+function checkboxRow(label, onchange) {
+  const box = el("input", { type: "checkbox" });
+  box.addEventListener("change", () => onchange(box.checked, box));
+  return { row: el("label", { class: "tier-check" }, [box, " " + label]), box };
+}
+function buildCampaignComposer(container, opts) {
+  const mode = opts.mode;
   container.innerHTML = "";
-  const lockedAudience = opts.lockedAudience;
-  const audienceSelect = lockedAudience
-    ? null
-    : el("select", {}, ["Members", "Non-members", "Mixed"].map((a) => el("option", { value: a }, a)));
-  const segmentSelect = el("select", {});
-  const typeSelect = el("select", {}, ["Newsletter", "Event invitation", "New training announcement", "Benefits update", "Policy / regulation alert", "Achievement or award spotlight"].map((t) => el("option", { value: t }, t)));
-  const subject = el("input", { type: "text", placeholder: "Subject line…", value: "New training dates just announced" });
+  const selection = { memberCriteria: new Set(), nonMemberLists: new Set(), includeSubscribers: false };
+
+  const templateSelect = el("select", {}, state.emailTemplates.map((t) => el("option", { value: t.id }, t.name)));
+  const subjectInput = el("input", { type: "text", placeholder: "Subject line…" });
+  const previewInput = el("input", { type: "text", placeholder: "Preview text (inbox snippet)…" });
+  const bodyTextarea = el("textarea", { rows: "6", class: "html-editor", placeholder: "<h2>Heading</h2>\n<p>Body copy…</p>" });
+  const previewPane = el("div", { class: "email-preview" });
   const summary = el("div", { class: "campaign-summary" });
 
-  const currentAudience = () => (lockedAudience ? lockedAudience : audienceSelect.value);
-  const rebuildSegments = () => {
-    segmentSelect.innerHTML = "";
-    segmentOptionsFor(currentAudience()).forEach((s) => segmentSelect.append(el("option", { value: s }, s)));
-    updateSummary();
+  const applyTemplate = () => {
+    const t = state.emailTemplates.find((x) => x.id === templateSelect.value) || state.emailTemplates[0];
+    subjectInput.value = t.subject;
+    previewInput.value = t.previewText;
+    bodyTextarea.value = t.bodyHtml;
+    updatePreview();
   };
+  const updatePreview = () => { previewPane.innerHTML = bodyTextarea.value || "<p class='cell-muted'>Nothing to preview yet.</p>"; };
   const updateSummary = () => {
-    const info = segmentRecipientInfo(currentAudience(), segmentSelect.value);
-    let text = `Sending "${typeSelect.value}" to “${segmentSelect.value}” (${currentAudience()}) — ${info.sendable} recipient${info.sendable === 1 ? "" : "s"}.`;
+    const info = composerRecipientInfo(selection);
+    let text = `${describeSelection(selection)} — ${info.sendable} recipient${info.sendable === 1 ? "" : "s"}.`;
     if (info.blocked > 0) text += ` ${info.blocked} excluded (no consent or unsubscribed).`;
     summary.textContent = text;
   };
-  if (audienceSelect) audienceSelect.onchange = rebuildSegments;
-  segmentSelect.onchange = updateSummary;
-  typeSelect.onchange = updateSummary;
+  templateSelect.onchange = applyTemplate;
+  bodyTextarea.oninput = updatePreview;
 
-  const row1Children = [];
-  if (audienceSelect) row1Children.push(el("label", {}, "Audience:"), audienceSelect);
-  row1Children.push(el("label", {}, "Segment:"), segmentSelect);
+  const audienceBlocks = [];
+  if (mode === "newsletter") {
+    const memberChecks = [["all", "All Active Members"], ["contractor", "Contractor Members"], ["corporate", "Corporate Members"], ["renewal_due", "Renewal-Due Members"]]
+      .map(([key, label]) => checkboxRow(label, (checked) => { checked ? selection.memberCriteria.add(key) : selection.memberCriteria.delete(key); updateSummary(); }).row);
+    audienceBlocks.push(el("fieldset", { class: "audience-block" }, [el("legend", {}, "Members"), el("div", { class: "tier-check-group" }, memberChecks)]));
+  }
+  const listRows = state.nonMemberLists.map((list) => checkboxRow(list.name, (checked) => { checked ? selection.nonMemberLists.add(list.id) : selection.nonMemberLists.delete(list.id); updateSummary(); }));
+  const allLists = checkboxRow("All lists", (checked) => {
+    listRows.forEach((r) => { r.box.checked = checked; });
+    if (checked) state.nonMemberLists.forEach((l) => selection.nonMemberLists.add(l.id));
+    else selection.nonMemberLists.clear();
+    updateSummary();
+  });
+  audienceBlocks.push(el("fieldset", { class: "audience-block" }, [el("legend", {}, "Non-Members"), el("div", { class: "tier-check-group" }, [allLists.row, ...listRows.map((r) => r.row)])]));
+  if (mode === "newsletter") {
+    const subRow = checkboxRow("Include site subscribers", (checked) => { selection.includeSubscribers = checked; updateSummary(); });
+    audienceBlocks.push(el("fieldset", { class: "audience-block" }, [el("legend", {}, "Subscribers"), el("div", { class: "tier-check-group" }, [subRow.row])]));
+  }
+
+  const sendBtn = el("button", {
+    class: "btn btn-primary",
+    onclick: () => {
+      const info = composerRecipientInfo(selection);
+      if (!info.sendable) { showToast("Select at least one audience with recipients before sending.", "info"); return; }
+      const audienceType = audienceTypeFor(selection);
+      const delivered = Math.round(info.sendable * 0.98);
+      const baseOpen = audienceType === "Members" ? 55 : audienceType === "Non-members" ? 35 : audienceType === "Subscribers" ? 40 : 42;
+      const openRate = Math.max(0, baseOpen - (info.sendable > 1000 ? 8 : 0));
+      const clickRate = Math.round(openRate * 0.22);
+      const unsubscribes = Math.max(0, Math.round(info.sendable * 0.002));
+      state.campaigns.unshift({
+        id: genId("cm"), name: subjectInput.value || "Untitled campaign", audience: audienceType, segment: describeSelection(selection),
+        sentDate: TODAY, recipients: info.sendable, delivered, deliveredRate: 98, openRate, clickRate, unsubscribes, status: "Sent",
+        previewText: previewInput.value, bodyHtml: bodyTextarea.value,
+      });
+      logSync(`Mailchimp campaign sent: "${subjectInput.value}" → ${describeSelection(selection)} (${info.sendable} recipients, consent-checked)`);
+      showToast(`Campaign sent via Mailchimp to ${info.sendable} contact${info.sendable === 1 ? "" : "s"}.`, "success");
+      opts.onSent && opts.onSent();
+    },
+  }, "Send via Mailchimp");
 
   container.append(
-    el("div", { class: "campaign-row" }, row1Children),
-    el("div", { class: "campaign-row" }, [el("label", {}, "Message type:"), typeSelect]),
-    el("div", { class: "campaign-row" }, [el("label", {}, "Subject:"), subject]),
+    el("div", { class: "campaign-row" }, [el("label", {}, "Template:"), templateSelect]),
+    el("div", { class: "campaign-row" }, [el("label", {}, "Subject:"), subjectInput]),
+    el("div", { class: "campaign-row" }, [el("label", {}, "Preview text:"), previewInput]),
+    el("div", { class: "editor-row" }, [
+      el("div", { class: "editor-col" }, [el("label", {}, "Email body (HTML)"), bodyTextarea]),
+      el("div", { class: "editor-col" }, [el("label", {}, "Preview"), previewPane]),
+    ]),
+    el("div", { class: "audience-picker" }, audienceBlocks),
     summary,
-    el("div", { class: "campaign-row" }, [
-      el("button", {
-        class: "btn btn-primary",
-        onclick: () => {
-          const info = segmentRecipientInfo(currentAudience(), segmentSelect.value);
-          const delivered = Math.round(info.sendable * 0.98);
-          const baseOpen = currentAudience() === "Members" ? 55 : currentAudience() === "Non-members" ? 35 : 42;
-          const openRate = Math.max(0, baseOpen - (info.sendable > 1000 ? 8 : 0));
-          const clickRate = Math.round(openRate * 0.22);
-          state.campaigns.unshift({ id: "cm" + (Math.floor(Math.random() * 90000) + 10000), name: subject.value, audience: currentAudience(), segment: segmentSelect.value, sentDate: TODAY, recipients: info.sendable, delivered, deliveredRate: info.sendable ? 98 : null, openRate: info.sendable ? openRate : null, clickRate: info.sendable ? clickRate : null, status: "Sent" });
-          logSync(`Mailchimp campaign sent: "${subject.value}" → ${segmentSelect.value} (${info.sendable} recipients, consent-checked)`);
-          showToast(`Campaign sent via Mailchimp to ${info.sendable} contact${info.sendable === 1 ? "" : "s"} in “${segmentSelect.value}”.`, "success");
-          renderCampaignsTable(byId("campaigns-table"), null);
-          renderCampaignsTable(byId("nonmember-campaigns-table"), "Non-members");
-        },
-      }, "Send via Mailchimp"),
-    ])
+    el("div", { class: "campaign-row" }, [sendBtn])
   );
-  rebuildSegments();
+  applyTemplate();
+  updateSummary();
 }
 function rateClass(rate, kind) {
   if (rate == null) return "badge-neutral";
@@ -689,11 +753,27 @@ function rateClass(rate, kind) {
   if (kind === "click") return rate >= 15 ? "badge-success" : rate >= 7 ? "badge-warning" : "badge-danger";
   return rate >= 95 ? "badge-success" : "badge-warning";
 }
+function renderCampaignSummary(container, audienceFilter) {
+  if (!container) return;
+  container.innerHTML = "";
+  const rows = state.campaigns.filter((cm) => cm.status === "Sent" && (!audienceFilter || cm.audience === audienceFilter));
+  const totalRecipients = rows.reduce((s, c) => s + (c.recipients || 0), 0);
+  const avgOpen = rows.length ? Math.round(rows.reduce((s, c) => s + (c.openRate || 0), 0) / rows.length) : 0;
+  const avgClick = rows.length ? Math.round(rows.reduce((s, c) => s + (c.clickRate || 0), 0) / rows.length) : 0;
+  const totalUnsub = rows.reduce((s, c) => s + (c.unsubscribes || 0), 0);
+  container.append(
+    statCard("Campaigns sent", rows.length, "All time", ""),
+    statCard("Total recipients reached", totalRecipients.toLocaleString(), "All time", "accent-teal"),
+    statCard("Avg. open rate", avgOpen + "%", "Across sent campaigns", ""),
+    statCard("Avg. click rate", avgClick + "%", "Across sent campaigns", "accent-orange"),
+    statCard("Unsubscribes", totalUnsub, "All time", "")
+  );
+}
 function renderCampaignsTable(wrap, audienceFilter) {
   if (!wrap) return;
   wrap.innerHTML = "";
   const table = el("table", {}, [
-    el("thead", {}, el("tr", {}, ["Campaign", "Audience", "Segment", "Sent", "Recipients", "Delivered", "Open rate", "Click rate", "Status"].map((h) => el("th", {}, h)))),
+    el("thead", {}, el("tr", {}, ["Campaign", "Audience", "Segment", "Sent", "Recipients", "Delivered", "Open rate", "Click rate", "Unsubs", "Status"].map((h) => el("th", {}, h)))),
   ]);
   const tbody = el("tbody");
   state.campaigns.filter((cm) => !audienceFilter || cm.audience === audienceFilter).sort((a, b) => (a.sentDate < b.sentDate ? 1 : -1)).forEach((cm) => {
@@ -706,20 +786,110 @@ function renderCampaignsTable(wrap, audienceFilter) {
       el("td", {}, cm.deliveredRate != null ? el("span", { class: "badge " + rateClass(cm.deliveredRate, "delivered") }, cm.deliveredRate + "%") : "—"),
       el("td", {}, cm.openRate != null ? el("span", { class: "badge " + rateClass(cm.openRate, "open") }, cm.openRate + "%") : "—"),
       el("td", {}, cm.clickRate != null ? el("span", { class: "badge " + rateClass(cm.clickRate, "click") }, cm.clickRate + "%") : "—"),
+      el("td", { class: "cell-muted" }, cm.unsubscribes != null ? String(cm.unsubscribes) : "—"),
       el("td", {}, el("span", { class: "badge " + (cm.status === "Sent" ? "badge-success" : "badge-neutral") }, cm.status)),
     ]));
   });
-  if (!tbody.children.length) tbody.appendChild(el("tr", {}, el("td", { colspan: "9", class: "cell-muted" }, "No campaigns yet.")));
+  if (!tbody.children.length) tbody.appendChild(el("tr", {}, el("td", { colspan: "10", class: "cell-muted" }, "No campaigns yet.")));
   table.appendChild(tbody);
   wrap.appendChild(table);
 }
-function renderNewsletterView() {
-  buildCampaignBuilder(byId("campaign-builder"), {});
+function refreshAllCampaignViews() {
+  renderCampaignSummary(byId("campaign-summary-strip"), null);
   renderCampaignsTable(byId("campaigns-table"), null);
+  renderCampaignSummary(byId("nonmember-campaign-summary"), "Non-members");
+  renderCampaignsTable(byId("nonmember-campaigns-table"), "Non-members");
+}
+function renderNewsletterSend() {
+  buildCampaignComposer(byId("campaign-builder"), { mode: "newsletter", onSent: refreshAllCampaignViews });
+}
+function renderNewsletterHistory() {
+  renderCampaignSummary(byId("campaign-summary-strip"), null);
+  renderCampaignsTable(byId("campaigns-table"), null);
+}
+function renderSubscribers() {
+  byId("subscriber-add-btn").onclick = () => openSubscriberForm();
+  const wrap = byId("subscribers-table");
+  wrap.innerHTML = "";
+  const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Name", "Email", "Source", "Subscribed", "Status", ""].map((h) => el("th", {}, h))))]);
+  const tbody = el("tbody");
+  state.subscribers.forEach((s) => {
+    tbody.appendChild(el("tr", {}, [
+      el("td", { class: "cell-primary" }, s.name),
+      el("td", { class: "cell-muted" }, s.email),
+      el("td", { class: "cell-muted" }, s.source),
+      el("td", {}, fmtDate(s.subscribedDate)),
+      el("td", {}, el("span", { class: "badge " + (s.unsubscribed ? "badge-danger" : "badge-success") }, s.unsubscribed ? "Unsubscribed" : "Subscribed")),
+      el("td", {}, el("button", { class: "btn btn-sm", onclick: () => { s.unsubscribed = !s.unsubscribed; renderSubscribers(); } }, s.unsubscribed ? "Resubscribe" : "Unsubscribe")),
+    ]));
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+function openSubscriberForm() {
+  const panel = byId("subscriber-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const nameInput = el("input", { type: "text", placeholder: "Name" });
+  const emailInput = el("input", { type: "text", placeholder: "Email" });
+  const sourceInput = el("input", { type: "text", value: "Manually added", placeholder: "Source" });
+  panel.append(
+    el("h3", {}, "Add subscriber"),
+    el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Email"), emailInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Source"), sourceInput]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          if (!emailInput.value.trim()) { showToast("Email is required.", "info"); return; }
+          state.subscribers.unshift({ id: genId("s"), name: nameInput.value.trim() || "—", email: emailInput.value.trim(), source: sourceInput.value.trim() || "Manually added", subscribedDate: TODAY, unsubscribed: false });
+          panel.style.display = "none";
+          showToast("Subscriber added.", "success");
+          renderSubscribers();
+        },
+      }, "Save"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ])
+  );
+}
+function renderUnsubEditor() {
+  const wrap = byId("unsub-editor");
+  wrap.innerHTML = "";
+  const headingInput = el("input", { type: "text", value: state.unsubscribePage.heading });
+  const bodyTextarea = el("textarea", { rows: "4" }, state.unsubscribePage.body);
+  const previewBox = el("div", { class: "email-preview" }, [el("h3", {}, state.unsubscribePage.heading), el("p", {}, state.unsubscribePage.body)]);
+  wrap.append(
+    el("div", { class: "form-row" }, [el("label", {}, "Heading"), headingInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Body"), bodyTextarea]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          state.unsubscribePage.heading = headingInput.value;
+          state.unsubscribePage.body = bodyTextarea.value;
+          showToast("Unsubscribe page updated.", "success");
+          renderUnsubEditor();
+        },
+      }, "Save"),
+    ]),
+    el("div", { class: "cell-muted", style: "margin-top:14px;" }, "Live preview:"),
+    previewBox
+  );
 }
 
 // -------------------------------------------------------------------- events
 function renderEvents() {
+  const cevent = INTEGRATIONS.find((i) => i.id === "cevent");
+  byId("events-sync-status").textContent = state.eventsSynced ? "Synced with CEvent — up to date" : `Last synced from CEvent: ${cevent.lastSync}`;
+  byId("events-sync-btn").onclick = () => {
+    if (state.eventsSynced) { showToast("Already up to date with CEvent.", "info"); return; }
+    EVENTS_PENDING_SYNC.forEach((e) => state.events.push({ ...e }));
+    state.eventsSynced = true;
+    logSync(`CEvent sync: ${EVENTS_PENDING_SYNC.length} new event(s) pulled in`);
+    showToast(`${EVENTS_PENDING_SYNC.length} new event(s) synced from CEvent.`, "success");
+    renderEvents();
+  };
+  byId("event-add-btn").onclick = () => openEventForm();
+
   const wrap = byId("events-table");
   wrap.innerHTML = "";
   const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Event", "Date", "Format", "Audience", "Registrations", "Published", ""].map((h) => el("th", {}, h))))]);
@@ -741,9 +911,49 @@ function renderEvents() {
   table.appendChild(tbody);
   wrap.appendChild(table);
 }
+function openEventForm() {
+  const panel = byId("event-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const nameInput = el("input", { type: "text", placeholder: "Event name" });
+  const dateInput = el("input", { type: "date", value: TODAY });
+  const formatSelect = el("select", {}, ["In-person", "Webinar", "Online"].map((f) => el("option", { value: f }, f)));
+  const audienceInput = el("input", { type: "text", value: "Members + Non-members", placeholder: "Audience" });
+  panel.append(
+    el("h3", {}, "Add event"),
+    el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Date"), dateInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Format"), formatSelect]),
+    el("div", { class: "form-row" }, [el("label", {}, "Audience"), audienceInput]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          if (!nameInput.value.trim()) { showToast("Event name is required.", "info"); return; }
+          state.events.push({ id: genId("e"), name: nameInput.value.trim(), date: dateInput.value, format: formatSelect.value, registrations: 0, audience: audienceInput.value.trim(), published: false });
+          panel.style.display = "none";
+          showToast("Event added as a draft.", "success");
+          renderEvents();
+        },
+      }, "Save"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ])
+  );
+}
 
 // ------------------------------------------------------------------ training
 function renderTraining() {
+  const cevent = INTEGRATIONS.find((i) => i.id === "cevent");
+  byId("training-sync-status").textContent = state.trainingsSynced ? "Synced with CEvent — up to date" : `Last synced from CEvent: ${cevent.lastSync}`;
+  byId("training-sync-btn").onclick = () => {
+    if (state.trainingsSynced) { showToast("Already up to date with CEvent.", "info"); return; }
+    TRAININGS_PENDING_SYNC.forEach((t) => state.trainings.push({ ...t }));
+    state.trainingsSynced = true;
+    logSync(`CEvent sync: ${TRAININGS_PENDING_SYNC.length} new training record(s) pulled in`);
+    showToast(`${TRAININGS_PENDING_SYNC.length} new training record(s) synced from CEvent.`, "success");
+    renderTraining();
+  };
+  byId("training-add-btn").onclick = () => openTrainingForm();
+
   const wrap = byId("training-table");
   wrap.innerHTML = "";
   const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Course", "Date", "Format", "Hours", "Audience", "Registrations", "Published", ""].map((h) => el("th", {}, h))))]);
@@ -766,8 +976,43 @@ function renderTraining() {
   table.appendChild(tbody);
   wrap.appendChild(table);
 }
+function openTrainingForm() {
+  const panel = byId("training-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const nameInput = el("input", { type: "text", placeholder: "Course name" });
+  const dateInput = el("input", { type: "date", value: TODAY });
+  const formatSelect = el("select", {}, ["Certification", "Short course", "Info session"].map((f) => el("option", { value: f }, f)));
+  const hoursInput = el("input", { type: "number", value: "8", min: "1" });
+  const audienceInput = el("input", { type: "text", value: "All contacts", placeholder: "Audience" });
+  panel.append(
+    el("h3", {}, "Add training"),
+    el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Date"), dateInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Format"), formatSelect]),
+    el("div", { class: "form-row" }, [el("label", {}, "Hours"), hoursInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Audience"), audienceInput]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          if (!nameInput.value.trim()) { showToast("Course name is required.", "info"); return; }
+          state.trainings.push({ id: genId("t"), name: nameInput.value.trim(), date: dateInput.value, format: formatSelect.value, hours: Number(hoursInput.value) || 1, registrations: 0, audience: audienceInput.value.trim(), published: false });
+          panel.style.display = "none";
+          showToast("Training added as a draft.", "success");
+          renderTraining();
+        },
+      }, "Save"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ])
+  );
+}
 
 // ------------------------------------------------------------------ benefits
+function benefitRequiredFieldsMet(b) {
+  if (b.category === "Events" || b.category === "Training") return !!(b.discountRate && b.discountRate.trim());
+  if (b.category === "Third-Party Discount") return !!(b.stepsToAvail?.trim() && b.eligibility?.trim() && b.discountAmount?.trim());
+  return true;
+}
 function renderBenefits() {
   byId("benefits-count").textContent = `${state.benefits.length} benefits · ${state.benefits.filter((b) => b.status === "Published").length} published, ${state.benefits.filter((b) => b.status === "Draft").length} draft`;
   byId("benefit-add-btn").onclick = () => openBenefitForm(null);
@@ -775,6 +1020,14 @@ function renderBenefits() {
   const grid = byId("benefits-grid");
   grid.innerHTML = "";
   state.benefits.forEach((b) => {
+    const extraLines = [];
+    if (b.category === "Events" || b.category === "Training") {
+      if (b.discountRate) extraLines.push(el("div", { class: "benefit-card__meta" }, `Member rate: ${b.discountRate}`));
+    } else if (b.category === "Third-Party Discount") {
+      if (b.discountAmount) extraLines.push(el("div", { class: "benefit-card__meta" }, `Discount: ${b.discountAmount}`));
+      if (b.eligibility) extraLines.push(el("div", { class: "benefit-card__meta" }, `Eligibility: ${b.eligibility}`));
+      if (b.stepsToAvail) extraLines.push(el("div", { class: "benefit-card__meta" }, `How to claim: ${b.stepsToAvail}`));
+    }
     grid.append(
       el("div", { class: "benefit-card" }, [
         el("div", { class: "benefit-card__top" }, [
@@ -783,6 +1036,7 @@ function renderBenefits() {
         ]),
         el("h3", {}, b.title),
         el("p", { class: "benefit-card__desc" }, b.description),
+        ...extraLines,
         el("div", { class: "benefit-card__tiers" }, b.tiers.map((t) => el("span", { class: "badge badge-neutral" }, t))),
         el("div", { class: "benefit-card__meta" }, `Updated ${fmtDate(b.updated)}`),
         el("div", { class: "benefit-card__actions" }, [
@@ -795,6 +1049,13 @@ function renderBenefits() {
 }
 function toggleBenefitStatus(id) {
   const b = state.benefits.find((x) => x.id === id);
+  if (b.status !== "Published" && !benefitRequiredFieldsMet(b)) {
+    const msg = (b.category === "Events" || b.category === "Training")
+      ? `Add the member discount rate before publishing "${b.title}".`
+      : `Add steps to avail, eligibility and the discount amount before publishing "${b.title}".`;
+    showToast(msg, "info");
+    return;
+  }
   b.status = b.status === "Published" ? "Draft" : "Published";
   b.updated = TODAY;
   showToast(`"${b.title}" is now ${b.status}.`, "success");
@@ -802,32 +1063,61 @@ function toggleBenefitStatus(id) {
 }
 function openBenefitForm(id) {
   state.editingBenefitId = id;
-  const b = id ? state.benefits.find((x) => x.id === id) : { title: "", category: "Discounts", description: "", tiers: [], status: "Draft" };
+  const b = id ? state.benefits.find((x) => x.id === id) : { title: "", category: BENEFIT_CATEGORIES[0], description: "", tiers: [], status: "Draft", discountRate: "", stepsToAvail: "", eligibility: "", discountAmount: "" };
   const panel = byId("benefit-form-panel");
   panel.style.display = "block";
   panel.innerHTML = "";
+
   const titleInput = el("input", { type: "text", value: b.title, placeholder: "Benefit title" });
-  const categoryInput = el("input", { type: "text", value: b.category, placeholder: "Category" });
+  const categorySelect = el("select", {}, BENEFIT_CATEGORIES.map((c) => el("option", { value: c }, c)));
+  categorySelect.value = b.category;
   const descInput = el("textarea", { rows: "3", placeholder: "Description" }, b.description);
   const tierBoxes = MEMBER_CATEGORIES.map((cat) => {
     const box = el("input", { type: "checkbox" });
     box.checked = b.tiers.includes(cat);
     return el("label", { class: "tier-check" }, [box, " " + cat]);
   });
+  const conditionalHost = el("div", {});
+  function renderConditionalFields() {
+    conditionalHost.innerHTML = "";
+    if (categorySelect.value === "Events" || categorySelect.value === "Training") {
+      const discountInput = el("input", { type: "text", value: b.discountRate || "", placeholder: "e.g. 20% off standard registration" });
+      discountInput.dataset.field = "discountRate";
+      conditionalHost.append(el("div", { class: "form-row" }, [el("label", {}, "Member discount / rate — required to publish"), discountInput]));
+    } else if (categorySelect.value === "Third-Party Discount") {
+      const stepsInput = el("textarea", { rows: "2", placeholder: "How does a member claim this?" }, b.stepsToAvail || "");
+      stepsInput.dataset.field = "stepsToAvail";
+      const eligInput = el("input", { type: "text", value: b.eligibility || "", placeholder: "Who is eligible?" });
+      eligInput.dataset.field = "eligibility";
+      const amountInput = el("input", { type: "text", value: b.discountAmount || "", placeholder: "How much? e.g. 15% off" });
+      amountInput.dataset.field = "discountAmount";
+      conditionalHost.append(
+        el("div", { class: "form-row" }, [el("label", {}, "Steps to avail — required to publish"), stepsInput]),
+        el("div", { class: "form-row" }, [el("label", {}, "Eligibility — required to publish"), eligInput]),
+        el("div", { class: "form-row" }, [el("label", {}, "Discount amount — required to publish"), amountInput])
+      );
+    }
+  }
+  categorySelect.onchange = renderConditionalFields;
+
   panel.append(
     el("h3", {}, id ? "Edit benefit" : "Add benefit"),
     el("div", { class: "form-row" }, [el("label", {}, "Title"), titleInput]),
-    el("div", { class: "form-row" }, [el("label", {}, "Category"), categoryInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Category"), categorySelect]),
     el("div", { class: "form-row" }, [el("label", {}, "Description"), descInput]),
+    conditionalHost,
     el("div", { class: "form-row" }, [el("label", {}, "Member tiers"), el("div", { class: "tier-check-group" }, tierBoxes)]),
     el("div", { class: "campaign-row" }, [
       el("button", {
-        class: "btn btn-primary",
-        onclick: () => {
+        class: "btn btn-primary", onclick: () => {
           const tiers = tierBoxes.filter((l) => l.querySelector("input").checked).map((l) => l.textContent.trim());
-          const payload = { title: titleInput.value.trim() || "Untitled benefit", category: categoryInput.value.trim() || "General", description: descInput.value.trim(), tiers, updated: TODAY };
+          const getField = (name) => conditionalHost.querySelector(`[data-field="${name}"]`)?.value.trim() || "";
+          const payload = {
+            title: titleInput.value.trim() || "Untitled benefit", category: categorySelect.value, description: descInput.value.trim(), tiers, updated: TODAY,
+            discountRate: getField("discountRate"), stepsToAvail: getField("stepsToAvail"), eligibility: getField("eligibility"), discountAmount: getField("discountAmount"),
+          };
           if (id) Object.assign(b, payload);
-          else state.benefits.unshift({ id: "b" + (Math.floor(Math.random() * 90000) + 10000), status: "Draft", ...payload });
+          else state.benefits.unshift({ id: genId("b"), status: "Draft", ...payload });
           panel.style.display = "none";
           showToast(id ? "Benefit updated." : "Benefit added as draft.", "success");
           renderBenefits();
@@ -836,53 +1126,192 @@ function openBenefitForm(id) {
       el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
     ])
   );
+  renderConditionalFields();
 }
 
 // --------------------------------------------------------------- non-members
+function contactMatchesFilter(n, filterValue) {
+  if (!filterValue) return true;
+  if (filterValue === "__none__") return !n.lists || n.lists.length === 0;
+  return n.lists && n.lists.includes(filterValue);
+}
+function listBadges(listIds) {
+  if (!listIds || !listIds.length) return el("span", { class: "cell-muted" }, "—");
+  return el("div", {}, listIds.map((id) => el("span", { class: "badge badge-neutral", style: "margin:0 4px 4px 0;display:inline-flex;" }, state.nonMemberLists.find((l) => l.id === id)?.name || id)));
+}
 function renderNonMemberContacts() {
-  const wrap = byId("nonmembers-list");
-  wrap.innerHTML = "";
-  const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Name", "Contact", "Tag", "Consent", "Subscribed", "History / last touch"].map((h) => el("th", {}, h))))]);
-  const tbody = el("tbody");
-  state.nonMembers.forEach((n) => {
-    tbody.appendChild(el("tr", {}, [
-      el("td", { class: "cell-primary" }, n.name),
-      el("td", { class: "cell-muted" }, n.contact),
-      el("td", {}, el("span", { class: "badge badge-neutral" }, n.tag)),
-      el("td", {}, el("span", { class: "badge " + (n.consent ? "badge-success" : "badge-danger") }, n.consent ? "Yes" : "No")),
-      el("td", {}, el("span", { class: "badge " + (n.unsubscribed ? "badge-danger" : "badge-success") }, n.unsubscribed ? "Unsubscribed" : "Subscribed")),
-      el("td", { class: "cell-muted" }, `${n.history} · ${n.lastTouch}`),
-    ]));
+  const filterSel = byId("contact-filter-list");
+  if (filterSel.options.length <= 2) state.nonMemberLists.forEach((l) => filterSel.append(el("option", { value: l.id }, l.name)));
+  byId("contact-add-btn").onclick = () => openContactForm(null);
+  byId("contact-bulk-btn").onclick = () => openBulkUploadForm();
+
+  const draw = () => {
+    const q = byId("contact-search").value.trim().toLowerCase();
+    const filterValue = filterSel.value;
+    const wrap = byId("nonmembers-list");
+    wrap.innerHTML = "";
+    const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Name", "Contact", "Lists", "Consent", "Subscribed", "History / last touch", ""].map((h) => el("th", {}, h))))]);
+    const tbody = el("tbody");
+    state.nonMembers
+      .filter((n) => contactMatchesFilter(n, filterValue))
+      .filter((n) => !q || n.name.toLowerCase().includes(q) || n.contact.toLowerCase().includes(q) || (n.email || "").toLowerCase().includes(q))
+      .forEach((n) => {
+        tbody.appendChild(el("tr", {}, [
+          el("td", { class: "cell-primary" }, n.name),
+          el("td", { class: "cell-muted" }, n.contact),
+          el("td", {}, listBadges(n.lists)),
+          el("td", {}, el("span", { class: "badge " + (n.consent ? "badge-success" : "badge-danger") }, n.consent ? "Yes" : "No")),
+          el("td", {}, el("span", { class: "badge " + (n.unsubscribed ? "badge-danger" : "badge-success") }, n.unsubscribed ? "Unsubscribed" : "Subscribed")),
+          el("td", { class: "cell-muted" }, `${n.history} · ${n.lastTouch}`),
+          el("td", {}, el("button", { class: "btn btn-sm", onclick: () => openContactForm(n.id) }, "Edit")),
+        ]));
+      });
+    if (!filterValue) {
+      state.companies.filter((c) => c.memberState === "lapsed").forEach((c) => {
+        if (q && !c.name.toLowerCase().includes(q)) return;
+        const primary = c.people.find((p) => p.primary) || c.people[0];
+        tbody.appendChild(el("tr", { class: "clickable", onclick: () => openDrawer(c.id) }, [
+          el("td", { class: "cell-primary" }, c.name),
+          el("td", { class: "cell-muted" }, primary?.name || "—"),
+          el("td", {}, el("span", { class: "badge badge-danger" }, "Former Member")),
+          el("td", {}, el("span", { class: "badge badge-success" }, "Yes")),
+          el("td", {}, el("span", { class: "badge badge-success" }, "Subscribed")),
+          el("td", { class: "cell-muted" }, `Member ${fmtDate(c.joinDate)} – ${fmtDate(c.renewalDate)}, lapsed`),
+          el("td", {}, el("span", { class: "cell-muted" }, "Company")),
+        ]));
+      });
+    }
+    if (!tbody.children.length) tbody.appendChild(el("tr", {}, el("td", { colspan: "7", class: "cell-muted" }, "No contacts match this search.")));
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+  };
+  byId("contact-search").oninput = draw;
+  filterSel.onchange = draw;
+  draw();
+}
+function openContactForm(id) {
+  const n = id ? state.nonMembers.find((x) => x.id === id) : { name: "", contact: "", email: "", history: "", lastTouch: "", lists: [], consent: true, unsubscribed: false };
+  const panel = byId("contact-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const nameInput = el("input", { type: "text", value: n.name, placeholder: "Business or individual name" });
+  const contactInput = el("input", { type: "text", value: n.contact, placeholder: "Contact person" });
+  const emailInput = el("input", { type: "text", value: n.email, placeholder: "Email" });
+  const consentBox = el("input", { type: "checkbox" }); consentBox.checked = n.consent;
+  const unsubBox = el("input", { type: "checkbox" }); unsubBox.checked = n.unsubscribed;
+  const listBoxes = state.nonMemberLists.map((list) => {
+    const box = el("input", { type: "checkbox" });
+    box.checked = n.lists.includes(list.id);
+    box.dataset.listId = list.id;
+    return el("label", { class: "tier-check" }, [box, " " + list.name]);
   });
-  state.companies.filter((c) => c.memberState === "lapsed").forEach((c) => {
-    const primary = c.people.find((p) => p.primary) || c.people[0];
-    tbody.appendChild(el("tr", { class: "clickable", onclick: () => openDrawer(c.id) }, [
-      el("td", { class: "cell-primary" }, c.name),
-      el("td", { class: "cell-muted" }, primary?.name || "—"),
-      el("td", {}, el("span", { class: "badge badge-danger" }, "Former Member")),
-      el("td", {}, el("span", { class: "badge badge-success" }, "Yes")),
-      el("td", {}, el("span", { class: "badge badge-success" }, "Subscribed")),
-      el("td", { class: "cell-muted" }, `Member ${fmtDate(c.joinDate)} – ${fmtDate(c.renewalDate)}, lapsed`),
-    ]));
+  panel.append(
+    el("h3", {}, id ? "Edit contact" : "Add contact"),
+    el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Contact person"), contactInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Email"), emailInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Lists (one or more)"), el("div", { class: "tier-check-group" }, listBoxes)]),
+    el("div", { class: "campaign-row" }, [
+      el("label", { class: "tier-check" }, [consentBox, " Marketing consent given"]),
+      el("label", { class: "tier-check" }, [unsubBox, " Unsubscribed"]),
+    ]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          if (!nameInput.value.trim()) { showToast("Name is required.", "info"); return; }
+          const lists = listBoxes.filter((l) => l.querySelector("input").checked).map((l) => l.querySelector("input").dataset.listId);
+          const payload = { name: nameInput.value.trim(), contact: contactInput.value.trim(), email: emailInput.value.trim(), lists, consent: consentBox.checked, unsubscribed: unsubBox.checked };
+          if (id) Object.assign(n, payload);
+          else state.nonMembers.unshift({ id: genId("n"), history: "Manually added", lastTouch: "Added " + fmtDate(TODAY), ...payload });
+          panel.style.display = "none";
+          showToast(id ? "Contact updated." : "Contact added.", "success");
+          renderNonMemberContacts();
+        },
+      }, "Save"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ])
+  );
+}
+function openBulkUploadForm() {
+  const panel = byId("contact-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const textarea = el("textarea", { rows: "6", placeholder: "One per line: Name, Contact person, Email" });
+  const listBoxes = state.nonMemberLists.map((list) => {
+    const box = el("input", { type: "checkbox" });
+    box.dataset.listId = list.id;
+    return el("label", { class: "tier-check" }, [box, " " + list.name]);
   });
-  table.appendChild(tbody);
-  wrap.appendChild(table);
+  panel.append(
+    el("h3", {}, "Bulk upload contacts"),
+    el("p", { class: "cell-muted" }, "Paste one contact per line as Name, Contact person, Email. Assign list(s) to apply to everyone uploaded — consent is assumed given unless changed later."),
+    el("div", { class: "form-row" }, [el("label", {}, "Contacts (CSV-style)"), textarea]),
+    el("div", { class: "form-row" }, [el("label", {}, "Assign to list(s)"), el("div", { class: "tier-check-group" }, listBoxes)]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          const lists = listBoxes.filter((l) => l.querySelector("input").checked).map((l) => l.querySelector("input").dataset.listId);
+          const lines = textarea.value.split("\n").map((l) => l.trim()).filter(Boolean);
+          let count = 0;
+          lines.forEach((line) => {
+            const [name, contact, email] = line.split(",").map((x) => (x || "").trim());
+            if (!name) return;
+            state.nonMembers.unshift({ id: genId("n"), name, contact: contact || "—", email: email || "—", history: "Bulk uploaded", lastTouch: "Uploaded " + fmtDate(TODAY), lists, consent: true, unsubscribed: false });
+            count++;
+          });
+          panel.style.display = "none";
+          showToast(`${count} contact${count === 1 ? "" : "s"} uploaded${lists.length ? " and added to " + lists.length + " list(s)" : ""}.`, "success");
+          renderNonMemberContacts();
+        },
+      }, "Upload"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ])
+  );
 }
 function renderNonMemberListsGrid() {
+  byId("list-add-btn").onclick = () => openListForm(null);
   const listsWrap = byId("nonmember-lists-grid");
   listsWrap.innerHTML = "";
-  NON_MEMBER_LISTS.forEach((list) => {
-    let count = state.nonMembers.filter((n) => n.tag === list.tag).length;
-    if (list.tag === "Former Member") count += state.companies.filter((c) => c.memberState === "lapsed").length;
+  state.nonMemberLists.forEach((list) => {
+    let count = state.nonMembers.filter((n) => n.lists.includes(list.id)).length;
+    if (list.id === "l3") count += state.companies.filter((c) => c.memberState === "lapsed").length;
     listsWrap.append(el("div", { class: "stat-card" }, [
       el("div", { class: "stat-card__label" }, list.name),
       el("div", { class: "stat-card__value" }, String(count)),
       el("div", { class: "stat-card__sub" }, list.description),
+      el("button", { class: "btn btn-sm", style: "margin-top:10px;", onclick: () => openListForm(list.id) }, "Edit"),
     ]));
   });
 }
+function openListForm(id) {
+  const list = id ? state.nonMemberLists.find((x) => x.id === id) : { name: "", description: "" };
+  const panel = byId("list-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const nameInput = el("input", { type: "text", value: list.name, placeholder: "List name" });
+  const descInput = el("input", { type: "text", value: list.description, placeholder: "Description" });
+  panel.append(
+    el("h3", {}, id ? "Edit list" : "Add list"),
+    el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Description"), descInput]),
+    el("div", { class: "campaign-row" }, [
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          if (!nameInput.value.trim()) { showToast("List name is required.", "info"); return; }
+          if (id) { list.name = nameInput.value.trim(); list.description = descInput.value.trim(); }
+          else state.nonMemberLists.push({ id: genId("l"), name: nameInput.value.trim(), description: descInput.value.trim() });
+          panel.style.display = "none";
+          showToast(id ? "List updated." : "List created.", "success");
+          renderNonMemberListsGrid();
+        },
+      }, "Save"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ])
+  );
+}
 function renderNonMemberCampaignsTab() {
-  buildCampaignBuilder(byId("nonmember-campaign-builder"), { lockedAudience: "Non-members" });
+  renderCampaignSummary(byId("nonmember-campaign-summary"), "Non-members");
+  buildCampaignComposer(byId("nonmember-campaign-builder"), { mode: "nonmember", onSent: refreshAllCampaignViews });
   renderCampaignsTable(byId("nonmember-campaigns-table"), "Non-members");
 }
 
@@ -940,24 +1369,6 @@ function renderCmsPanel(key) {
   const panel = byId("cms-" + key);
   if (!panel) return;
   panel.innerHTML = "";
-  if (key === "handbook") {
-    panel.append(
-      el("p", { class: "subtab-intro" }, "The handbook itself is authored and published in a separate system — this is just the access point and sync status."),
-      el("div", { class: "panel" }, [
-        el("div", { class: "drawer-kv", style: "grid-template-columns:160px 1fr;" }, [
-          el("dt", {}, "Handbook"), el("dd", {}, HANDBOOK.name),
-          el("dt", {}, "System"), el("dd", {}, HANDBOOK.system),
-          el("dt", {}, "Sections"), el("dd", {}, String(HANDBOOK.sections)),
-          el("dt", {}, "Last published"), el("dd", {}, fmtDate(HANDBOOK.lastPublished)),
-        ]),
-        el("div", { class: "campaign-row", style: "margin-top:12px;" }, [
-          el("button", { class: "btn btn-primary", onclick: () => showToast("Opens " + HANDBOOK.editUrl + " (separate system).", "info") }, "Edit handbook"),
-          el("button", { class: "btn", onclick: () => showToast("Opens " + HANDBOOK.viewUrl + " (separate system).", "info") }, "View live handbook"),
-        ]),
-      ])
-    );
-    return;
-  }
   const typeLabel = CMS_TYPES.find((t) => t.key === key)?.label || key;
   const toolbar = el("div", { class: "toolbar" }, [
     el("span", { class: "cell-muted" }, `${state.cms[key].length} items`),
@@ -1000,7 +1411,7 @@ function renderCmsPanel(key) {
           onclick: () => {
             const payload = { title: titleInput.value.trim() || "Untitled", summary: summaryInput.value.trim(), updated: TODAY };
             if (id) Object.assign(item, payload);
-            else state.cms[k].unshift({ id: k + (Math.floor(Math.random() * 90000) + 10000), status: "Draft", ...payload });
+            else state.cms[k].unshift({ id: genId(k), status: "Draft", ...payload });
             formHost.style.display = "none";
             showToast(id ? "Updated." : "Added as draft.", "success");
             renderCmsPanel(k);
@@ -1071,6 +1482,26 @@ function generateDocument(companyId, templateId) {
   preview.append(el("h3", {}, `${t.name} — ${c.name}`), el("p", {}, merged));
   addTimeline(c, "document", `Generated document: ${t.name}`);
   showToast(`"${t.name}" generated for ${c.name}.`, "success");
+}
+
+// -------------------------------------------------------------- handbook
+function renderHandbookPanel() {
+  const panel = byId("handbook-panel");
+  panel.innerHTML = "";
+  panel.append(
+    el("div", { class: "panel" }, [
+      el("dl", { class: "drawer-kv", style: "grid-template-columns:160px 1fr;" }, [
+        el("dt", {}, "Handbook"), el("dd", {}, HANDBOOK.name),
+        el("dt", {}, "System"), el("dd", {}, HANDBOOK.system),
+        el("dt", {}, "Sections"), el("dd", {}, String(HANDBOOK.sections)),
+        el("dt", {}, "Last published"), el("dd", {}, fmtDate(HANDBOOK.lastPublished)),
+      ]),
+      el("div", { class: "campaign-row", style: "margin-top:12px;" }, [
+        el("button", { class: "btn btn-primary", onclick: () => showToast("Opens " + HANDBOOK.editUrl + " (separate system).", "info") }, "Edit handbook"),
+        el("button", { class: "btn", onclick: () => showToast("Opens " + HANDBOOK.viewUrl + " (separate system).", "info") }, "View live handbook"),
+      ]),
+    ])
+  );
 }
 
 // -------------------------------------------------------------- integrations
@@ -1255,7 +1686,7 @@ function toggleSettingsPopover(e) { e.stopPropagation(); byId("settings-popover"
 // --------------------------------------------------------------------- init
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".sidebar__nav .nav-btn").forEach((btn) => btn.addEventListener("click", () => showView(btn.dataset.view)));
-  document.querySelectorAll(".settings-popover .nav-btn, .settings-popover button").forEach((btn) => btn.addEventListener("click", () => showView(btn.dataset.view)));
+  document.querySelectorAll(".settings-popover button").forEach((btn) => btn.addEventListener("click", () => showView(btn.dataset.view)));
   document.querySelectorAll("[data-goto]").forEach((btn) => btn.addEventListener("click", () => {
     const sub = btn.dataset.gotoSubtab;
     if (sub) state.subtab[btn.dataset.goto] = sub;

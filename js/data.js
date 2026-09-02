@@ -339,22 +339,42 @@ const COMPANIES = [
 // Non-members — past enquiries that didn't convert, plus event/training-only
 // contacts. Kept in the same database so re-engagement is possible. Lapsed
 // member companies (see COMPANIES above) also feed the "Former Members" list.
+// A contact can belong to zero, one, or several lists (see NON_MEMBER_LISTS),
+// assignable at creation, on bulk upload, or later from the Contacts tab.
 // ---------------------------------------------------------------------------
 const NON_MEMBERS = [
-  { id: "n01", name: "Ridgeline Air Pty Ltd", contact: "Owen Marsh", email: "owen@ridgelineair.com.au", history: "Enquired 2024, did not proceed", lastTouch: "Attended: Refrigerant Safety Workshop, Jun 2026", tag: "Past Enquiry", consent: true, unsubscribed: false },
-  { id: "n02", name: "Ferris Industrial Cooling", contact: "Beth Ferris", email: "beth@ferriscooling.com.au", history: "Member 2015–2023, lapsed", lastTouch: "Attended: Annual HVAC Conference 2025", tag: "Former Member", consent: true, unsubscribed: false },
-  { id: "n03", name: "Kade Nguyen (Individual)", contact: "Kade Nguyen", email: "kade.nguyen@gmail.com", history: "Completed Cert IV Certification, 2025", tag: "Training Alumni", lastTouch: "Awarded: Apprentice of the Year 2025", consent: true, unsubscribed: false },
-  { id: "n04", name: "Bluewater Mechanical Services", contact: "Sam Ionescu", email: "sam@bluewatermech.com.au", history: "Enquired 2025, budget deferred", lastTouch: "Registered: Design Standards Update webinar", tag: "Past Enquiry", consent: false, unsubscribed: false },
-  { id: "n05", name: "Outback Refrigeration", contact: "Priya Chandra", email: "priya@outbackrefrig.com.au", history: "Attended 3 training courses since 2023", lastTouch: "Attended: Confined Spaces Safety Training", tag: "Training Alumni", consent: true, unsubscribed: false },
-  { id: "n06", name: "Harbourside Air & Electrical", contact: "Ngaire Fenwick", email: "ngaire@harboursideair.com.au", history: "Attended Annual Conference 2025 & 2026", tag: "Event Attendee", lastTouch: "Attended: Annual HVAC Conference 2026", consent: true, unsubscribed: true },
+  { id: "n01", name: "Ridgeline Air Pty Ltd", contact: "Owen Marsh", email: "owen@ridgelineair.com.au", history: "Enquired 2024, did not proceed", lastTouch: "Attended: Refrigerant Safety Workshop, Jun 2026", lists: ["l1"], consent: true, unsubscribed: false },
+  { id: "n02", name: "Ferris Industrial Cooling", contact: "Beth Ferris", email: "beth@ferriscooling.com.au", history: "Member 2015–2023, lapsed", lastTouch: "Attended: Annual HVAC Conference 2025", lists: ["l3"], consent: true, unsubscribed: false },
+  { id: "n03", name: "Kade Nguyen (Individual)", contact: "Kade Nguyen", email: "kade.nguyen@gmail.com", history: "Completed Cert IV Certification, 2025", lists: ["l2"], lastTouch: "Awarded: Apprentice of the Year 2025", consent: true, unsubscribed: false },
+  { id: "n04", name: "Bluewater Mechanical Services", contact: "Sam Ionescu", email: "sam@bluewatermech.com.au", history: "Enquired 2025, budget deferred", lastTouch: "Registered: Design Standards Update webinar", lists: ["l1"], consent: false, unsubscribed: false },
+  { id: "n05", name: "Outback Refrigeration", contact: "Priya Chandra", email: "priya@outbackrefrig.com.au", history: "Attended 3 training courses since 2023", lastTouch: "Attended: Confined Spaces Safety Training", lists: ["l2", "l4"], consent: true, unsubscribed: false },
+  { id: "n06", name: "Harbourside Air & Electrical", contact: "Ngaire Fenwick", email: "ngaire@harboursideair.com.au", history: "Attended Annual Conference 2025 & 2026", lists: ["l4"], lastTouch: "Attended: Annual HVAC Conference 2026", consent: true, unsubscribed: true },
 ];
 
+// A mutable registry — staff can create new lists from the Lists tab.
 const NON_MEMBER_LISTS = [
-  { id: "l1", tag: "Past Enquiry", name: "Past Enquiries", description: "Enquired but didn't proceed to membership." },
-  { id: "l2", tag: "Training Alumni", name: "Training Alumni", description: "Completed a certification or short course, never joined." },
-  { id: "l3", tag: "Former Member", name: "Former Members", description: "Lapsed or resigned members — combined with companies marked Lapsed." },
-  { id: "l4", tag: "Event Attendee", name: "Event Attendees", description: "Attended an AMCA event or webinar without joining." },
+  { id: "l1", name: "Past Enquiries", description: "Enquired but didn't proceed to membership." },
+  { id: "l2", name: "Training Alumni", description: "Completed a certification or short course, never joined." },
+  { id: "l3", name: "Former Members", description: "Lapsed or resigned members — combined with companies marked Lapsed." },
+  { id: "l4", name: "Event Attendees", description: "Attended an AMCA event or webinar without joining." },
 ];
+
+// ---------------------------------------------------------------------------
+// Site subscribers — newsletter-only signups (footer form, guide downloads,
+// careers page) who are not CRM contacts of any other kind.
+// ---------------------------------------------------------------------------
+const SUBSCRIBERS = [
+  { id: "s1", name: "James Harkness", email: "j.harkness@gmail.com", source: "Website footer signup", subscribedDate: "2026-07-02", unsubscribed: false },
+  { id: "s2", name: "Maria O'Connor", email: "m.oconnor@outlook.com", source: "Guide download", subscribedDate: "2026-06-15", unsubscribed: false },
+  { id: "s3", name: "Dev Singh", email: "d.singh@bigpond.com", source: "Website footer signup", subscribedDate: "2026-05-20", unsubscribed: true },
+  { id: "s4", name: "Chris Wallace", email: "c.wallace@gmail.com", source: "Careers page signup", subscribedDate: "2026-08-11", unsubscribed: false },
+];
+
+// The public unsubscribe-confirmation page copy, editable from Newsletter.
+const UNSUBSCRIBE_PAGE = {
+  heading: "You've been unsubscribed",
+  body: "You won't receive AMCA newsletter emails going forward. You may still receive service emails related to your membership, events you've registered for, or training you've enrolled in.",
+};
 
 // ---------------------------------------------------------------------------
 // Events & Training — kept as separate content types with separate tabs.
@@ -373,17 +393,38 @@ const TRAININGS = [
   { id: "t04", name: "Apprentice Skills Bootcamp", date: "2026-10-20", format: "Certification", registrations: 22, audience: "Non-members (career pathway)", hours: 40, published: false },
 ];
 
+// Events/training are normally synced from CEvent (see INTEGRATIONS); these
+// are "new" records waiting to be pulled in by the Sync now action, so the
+// sync flow has something to demonstrate. Manual creation stays available too.
+const EVENTS_PENDING_SYNC = [
+  { id: "e05", name: "Regional Roadshow — Newcastle", date: "2026-10-02", format: "In-person", registrations: 0, audience: "Members + Non-members", published: false },
+];
+const TRAININGS_PENDING_SYNC = [
+  { id: "t05", name: "Cert III Pathway Info Session", date: "2026-10-15", format: "Info session", registrations: 0, audience: "Non-members (career pathway)", hours: 2, published: false },
+];
+
 // ---------------------------------------------------------------------------
 // Benefits CMS — the content members are told about in the benefits email
 // and see on the member portal.
+//
+// Category drives what's required before a benefit can be published:
+//  - "Events" / "Training"   -> discountRate (the member discount/rate) must
+//    be set — these ride on top of a real event/training run by AMCA itself.
+//  - "Third-Party Discount"  -> stepsToAvail, eligibility and discountAmount
+//    must all be set — an outside partner's offer needs to be unambiguous
+//    about how a member actually claims it.
+//  - anything else           -> description alone is enough.
 // ---------------------------------------------------------------------------
+const BENEFIT_CATEGORIES = ["Technical Support", "Third-Party Discount", "Resources", "Training", "Events", "Governance", "Member Support"];
+
 const BENEFITS = [
   { id: "b01", title: "Technical Helpline", category: "Technical Support", description: "Unlimited phone & email access to AMCA's technical advisory team for code compliance and design queries.", tiers: ["Contractor Member", "Corporate Member"], status: "Published", updated: "2026-06-10" },
-  { id: "b02", title: "Testo Member Pricing", category: "Discounts", description: "15% off Testo HVAC/R diagnostic tools, ongoing.", tiers: ["Contractor Member", "Corporate Member", "Associate Member"], status: "Published", updated: "2026-08-02" },
+  { id: "b02", title: "Testo Member Pricing", category: "Third-Party Discount", description: "Ongoing discount on Testo HVAC/R diagnostic tools.", stepsToAvail: "Show your AMCA membership number at checkout on testo.com.au, or quote it by phone.", eligibility: "All current financial members.", discountAmount: "15% off list price", tiers: ["Contractor Member", "Corporate Member", "Associate Member"], status: "Published", updated: "2026-08-02" },
   { id: "b03", title: "Technical Standards Library", category: "Resources", description: "Full access to AMCA's design and installation standards library, updated as codes change.", tiers: ["Contractor Member", "Corporate Member"], status: "Published", updated: "2026-04-18" },
-  { id: "b04", title: "Discounted Training Places", category: "Training", description: "Member pricing on all certification and short courses.", tiers: ["Contractor Member", "Corporate Member", "Associate Member", "Affiliate Member"], status: "Published", updated: "2026-07-22" },
+  { id: "b04", title: "Training Course Member Pricing", category: "Training", description: "Member pricing on all certification and short courses.", discountRate: "20% off all certification and short courses", tiers: ["Contractor Member", "Corporate Member", "Associate Member", "Affiliate Member"], status: "Published", updated: "2026-07-22" },
   { id: "b05", title: "Voting Rights", category: "Governance", description: "Vote at the AGM and in board elections.", tiers: ["Contractor Member", "Corporate Member"], status: "Published", updated: "2025-11-01" },
   { id: "b06", title: "Wellbeing Support Line", category: "Member Support", description: "Confidential counselling and wellbeing support for members and their staff.", tiers: ["Contractor Member", "Corporate Member", "Associate Member"], status: "Draft", updated: "2026-08-28" },
+  { id: "b07", title: "Annual HVAC Conference — Member Rate", category: "Events", description: "Member registration pricing for the Annual HVAC Conference.", discountRate: "30% off standard registration", tiers: ["Contractor Member", "Corporate Member", "Associate Member", "Affiliate Member"], status: "Published", updated: "2026-08-20" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -419,14 +460,27 @@ const WORKFLOWS = {
 // ---------------------------------------------------------------------------
 // Campaigns — generic, all-audience sends (as distinct from the automated
 // per-company lifecycle emails above), with Mailchimp-style analytics.
+// "Mixed" audience = some combination of Members + Non-member lists + Site
+// Subscribers, selected per send (see the Newsletter builder in app.js).
 // ---------------------------------------------------------------------------
 const CAMPAIGNS = [
-  { id: "cm1", name: "Q3 Benefits Spotlight", audience: "Members", segment: "All Active Members", sentDate: "2026-09-01", recipients: 0, delivered: 0, deliveredRate: null, openRate: null, clickRate: null, status: "Scheduled" },
-  { id: "cm2", name: "Spring Training Calendar 2026", audience: "Non-members", segment: "Training Alumni", sentDate: "2026-08-18", recipients: 412, delivered: 404, deliveredRate: 98, openRate: 46, clickRate: 12, status: "Sent" },
-  { id: "cm3", name: "New F-Gas Regulation Alert", audience: "Members", segment: "All Active Members", sentDate: "2026-08-01", recipients: 1860, delivered: 1829, deliveredRate: 98, openRate: 61, clickRate: 24, status: "Sent" },
-  { id: "cm4", name: "Annual HVAC Conference — Save the Date", audience: "Mixed", segment: "All Contacts", sentDate: "2026-07-20", recipients: 2184, delivered: 2140, deliveredRate: 98, openRate: 38, clickRate: 9, status: "Sent" },
-  { id: "cm5", name: "Win-back: We've missed you", audience: "Non-members", segment: "Former Members", sentDate: "2026-07-05", recipients: 96, delivered: 93, deliveredRate: 97, openRate: 29, clickRate: 6, status: "Sent" },
-  { id: "cm6", name: "Apprentice of the Year — Nominations Open", audience: "Mixed", segment: "All Contacts", sentDate: "2026-06-14", recipients: 2140, delivered: 2091, deliveredRate: 98, openRate: 33, clickRate: 8, status: "Sent" },
+  { id: "cm1", name: "Q3 Benefits Spotlight", audience: "Members", segment: "All Active Members", sentDate: "2026-09-01", recipients: 0, delivered: 0, deliveredRate: null, openRate: null, clickRate: null, unsubscribes: null, status: "Scheduled", previewText: "New this quarter: three benefits worth a second look", bodyHtml: "<h2>Q3 Benefits Spotlight</h2><p>Here's what's new in your membership this quarter.</p>" },
+  { id: "cm2", name: "Spring Training Calendar 2026", audience: "Non-members", segment: "Training Alumni", sentDate: "2026-08-18", recipients: 412, delivered: 404, deliveredRate: 98, openRate: 46, clickRate: 12, unsubscribes: 2, status: "Sent", previewText: "New certification dates just announced", bodyHtml: "<h2>Spring Training Calendar</h2><p>New dates are open for booking.</p>" },
+  { id: "cm3", name: "New F-Gas Regulation Alert", audience: "Members", segment: "All Active Members", sentDate: "2026-08-01", recipients: 1860, delivered: 1829, deliveredRate: 98, openRate: 61, clickRate: 24, unsubscribes: 3, status: "Sent", previewText: "What changed, and what you need to do", bodyHtml: "<h2>F-Gas Regulation Update</h2><p>Here's what changed and what you need to do.</p>" },
+  { id: "cm4", name: "Annual HVAC Conference — Save the Date", audience: "Mixed", segment: "All Contacts", sentDate: "2026-07-20", recipients: 2184, delivered: 2140, deliveredRate: 98, openRate: 38, clickRate: 9, unsubscribes: 5, status: "Sent", previewText: "12 November — mark your calendar", previewLists: ["l1", "l2", "l3", "l4"], bodyHtml: "<h2>Save the Date</h2><p>Join us on 12 November for the Annual HVAC Conference.</p>" },
+  { id: "cm5", name: "Win-back: We've missed you", audience: "Non-members", segment: "Former Members", sentDate: "2026-07-05", recipients: 96, delivered: 93, deliveredRate: 97, openRate: 29, clickRate: 6, unsubscribes: 1, status: "Sent", previewText: "Here's what you're missing", bodyHtml: "<h2>We've missed you</h2><p>Come back and see what's new at AMCA.</p>" },
+  { id: "cm6", name: "Apprentice of the Year — Nominations Open", audience: "Mixed", segment: "All Contacts", sentDate: "2026-06-14", recipients: 2140, delivered: 2091, deliveredRate: 98, openRate: 33, clickRate: 8, unsubscribes: 4, status: "Sent", previewText: "Nominate an outstanding apprentice today", bodyHtml: "<h2>Nominations Open</h2><p>Nominate an outstanding apprentice today.</p>" },
+];
+
+// ---------------------------------------------------------------------------
+// Reusable campaign templates (Newsletter → Send). "Blank" starts empty.
+// ---------------------------------------------------------------------------
+const EMAIL_TEMPLATES = [
+  { id: "tpl0", name: "Blank", subject: "", previewText: "", bodyHtml: "<p></p>" },
+  { id: "tpl1", name: "Monthly Newsletter", subject: "AMCA Monthly Update", previewText: "What's new this month at AMCA", bodyHtml: "<h2>This month at AMCA</h2><p>A round-up of news, events and resources.</p>" },
+  { id: "tpl2", name: "Event Invitation", subject: "You're invited: {{event_name}}", previewText: "Join us — registration is open", bodyHtml: "<h2>You're invited</h2><p>Join us for {{event_name}}. Registration is open now.</p>" },
+  { id: "tpl3", name: "Training Announcement", subject: "New training dates just announced", previewText: "Book your place before spots fill up", bodyHtml: "<h2>New training dates</h2><p>New course dates are now open for booking.</p>" },
+  { id: "tpl4", name: "Benefits Update", subject: "New: an updated member benefit", previewText: "See what's changed", bodyHtml: "<h2>Benefits update</h2><p>Here's what's new in your membership benefits.</p>" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -451,6 +505,7 @@ const INTEGRATIONS = [
   { id: "xero", name: "Xero", role: "Onboarding & renewal invoices + payment status", status: "connected", lastSync: "2026-09-01 08:14" },
   { id: "mailchimp", name: "Mailchimp", role: "Contacts, segments & campaign analytics", status: "connected", lastSync: "2026-09-01 07:50" },
   { id: "website", name: "AMCA Website", role: "Login, paywall & member resources, CMS publishing", status: "connected", lastSync: "2026-09-01 08:20" },
+  { id: "cevent", name: "CEvent", role: "Events & training registrations sync", status: "connected", lastSync: "2026-08-30 06:00" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -499,7 +554,6 @@ const CMS_TYPES = [
   { key: "initiatives", label: "Initiatives" },
   { key: "impact", label: "Impact Updates" },
   { key: "careers", label: "Careers" },
-  { key: "handbook", label: "Handbook" },
 ];
 
 const CMS_CONTENT = {
