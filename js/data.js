@@ -564,6 +564,50 @@ const DOC_TEMPLATES = [
   { id: "d4", name: "Compliance Statement", appliesTo: "Active members", body: "{{company_name}} ({{abn}}) is confirmed as a current {{category}} of AMCA Australia in good standing as at today's date.", active: false, updated: "2026-04-22" },
 ];
 
+// Document Management workflow: a generated document sits "Awaiting review"
+// until an approver publishes it; each publish bumps the version.
+const DOC_REVIEWS_SEED = {
+  awaiting: [
+    { id: "dr1", category: "Membership Certificate", title: "Membership Certificate — Vantage Air Pty Ltd", editedBy: "Marie Neisler", submitted: "2026-08-31" },
+  ],
+  published: [
+    { id: "dp1", category: "Welcome Letter", title: "Welcome Letter — Delta Cooling Co", editedBy: "Marie Neisler", approvedBy: "Michael Hamilton", when: "2026-08-31", version: 3 },
+    { id: "dp2", category: "Welcome Letter", title: "Welcome Letter — Delta Cooling Co", editedBy: "Michael Hamilton", approvedBy: "Michael Hamilton", when: "2026-08-17", version: 2 },
+    { id: "dp3", category: "Renewal Invoice Cover Letter", title: "Renewal Invoice Cover Letter — BreezeTech Industries", editedBy: "Brooke Alexander", approvedBy: "Andrew Kendt", when: "2026-08-12", version: 1 },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Feedback Analysis — usage/quality analytics for the AI-assisted tools
+// (chat assist + document generator), independent of membership data.
+// ---------------------------------------------------------------------------
+const FEEDBACK_STATS = {
+  totalQuestions: 47,
+  totalFeedback: 0,
+  totalPositive: 0,
+  totalNegative: 0,
+  withComments: 0,
+  topTopics: [
+    { topic: "Membership renewal", count: 14 },
+    { topic: "F-Gas regulation changes", count: 9 },
+    { topic: "Training course dates", count: 7 },
+    { topic: "Technical helpline eligibility", count: 6 },
+    { topic: "Benefits & discounts", count: 5 },
+  ],
+  topSources: [
+    { source: "Member Handbook", count: 11 },
+    { source: "F-Gas Regulation Guide", count: 8 },
+    { source: "Technical Standards Library", count: 6 },
+    { source: "Membership Categories page", count: 5 },
+  ],
+};
+
+// Usage split by AI-assisted tool, shown under Users → Usage.
+const TOOL_USAGE = {
+  aiAssist: { totalUsers: 8, totalOrgs: 5, totalProjects: 23 },
+  docGenerator: { totalUsers: 6, totalOrgs: 4, totalProjects: 10 },
+};
+
 // ---------------------------------------------------------------------------
 // Website CMS — public-site content, separate from the operational
 // Events/Training/Benefits tabs (which keep their own publish toggle).

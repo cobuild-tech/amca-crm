@@ -27,6 +27,8 @@ const state = {
   eventsSynced: false,
   trainingsSynced: false,
   docTemplates: JSON.parse(JSON.stringify(DOC_TEMPLATES)),
+  docReviews: JSON.parse(JSON.stringify(DOC_REVIEWS_SEED)),
+  feedbackRange: "30 days",
   view: "action",
   appMode: "crm",
   currentUser: CURRENT_USER,
@@ -184,7 +186,8 @@ function renderView(viewId) {
     case "ptraining": return renderTrainingSimple();
     case "pbenefits": return renderBenefitsSimple();
     case "phandbook": return renderHandbookPanel("phandbook-panel");
-    case "pdocgen": return renderDocGen({ templates: "pdocgen-templates", form: "pdocgen-form", preview: "pdocgen-preview" });
+    case "pdocgen": return renderDocGen({ templates: "pdocgen-templates", form: "pdocgen-form", preview: "pdocgen-preview", reviews: "pdocgen-reviews" });
+    case "feedback": return renderFeedbackAnalysis();
   }
 }
 
@@ -422,6 +425,14 @@ function renderDashboard() {
       ])
     );
   });
+
+  const usageGrid = byId("dashboard-usage");
+  usageGrid.innerHTML = "";
+  usageGrid.append(
+    statCard("Total chats", USERS.reduce((s, u) => s + (u.chats || 0), 0), "Across all users", ""),
+    statCard("Messages sent", USERS.reduce((s, u) => s + (u.messages || 0), 0), "Across all users", "accent-teal"),
+    statCard("Docs generated", USERS.reduce((s, u) => s + (u.documentsGenerated || 0), 0), "Across all users", "accent-orange")
+  );
 }
 
 // -------------------------------------------------------------- new members
@@ -1462,8 +1473,77 @@ function renderCmsPanel(key) {
 }
 
 // -------------------------------------------------------------- document gen
+const docReviewTabState = {};
+function renderDocReviews(reviewsContainerId) {
+  const host = byId(reviewsContainerId);
+  if (!host) return;
+  if (!docReviewTabState[reviewsContainerId]) docReviewTabState[reviewsContainerId] = "awaiting";
+  const activeTab = docReviewTabState[reviewsContainerId];
+  host.innerHTML = "";
+
+  const tabs = el("div", { class: "subtabs subtabs--nested" }, [
+    el("button", { class: "doc-tab-btn " + (activeTab === "awaiting" ? "active" : ""), onclick: () => { docReviewTabState[reviewsContainerId] = "awaiting"; renderDocReviews(reviewsContainerId); } }, `Awaiting review (${state.docReviews.awaiting.length})`),
+    el("button", { class: "doc-tab-btn " + (activeTab === "published" ? "active" : ""), onclick: () => { docReviewTabState[reviewsContainerId] = "published"; renderDocReviews(reviewsContainerId); } }, "Published"),
+  ]);
+  host.appendChild(tabs);
+
+  if (activeTab === "awaiting") {
+    const byCategory = {};
+    state.docReviews.awaiting.forEach((r) => { (byCategory[r.category] = byCategory[r.category] || []).push(r); });
+    const panel = el("div", { class: "panel" });
+    Object.entries(byCategory).forEach(([category, rows]) => {
+      panel.append(el("div", { class: "workflow-row__meta", style: "margin:4px 0 6px;" }, `${category} (${rows.length})`));
+      rows.forEach((r) => {
+        panel.append(
+          el("div", { class: "person-row" }, [
+            el("div", {}, [
+              el("div", { class: "person-row__name" }, r.title),
+              el("div", { class: "person-row__role" }, `${r.editedBy} · ${fmtDate(r.submitted)}`),
+            ]),
+            el("div", { style: "display:flex;align-items:center;gap:8px;" }, [
+              el("span", { class: "badge badge-warning" }, "In review"),
+              el("button", { class: "btn btn-sm btn-primary", onclick: () => approveDocReview(r.id, reviewsContainerId) }, "Approve & publish"),
+            ]),
+          ])
+        );
+      });
+    });
+    if (!state.docReviews.awaiting.length) panel.append(el("p", { class: "cell-muted" }, "Nothing awaiting review."));
+    host.appendChild(panel);
+  } else {
+    const total = state.docReviews.published.length;
+    const byCategoryCount = {};
+    state.docReviews.published.forEach((p) => { byCategoryCount[p.category] = (byCategoryCount[p.category] || 0) + 1; });
+    host.append(el("p", {}, [el("b", {}, String(total)), " published across every document type"]));
+    const panel = el("div", { class: "panel" }, [el("div", { class: "panel__head" }, el("h2", {}, "Recent activity"))]);
+    [...state.docReviews.published].sort((a, b) => (a.when < b.when ? 1 : -1)).forEach((p) => {
+      panel.append(
+        el("div", { class: "person-row" }, [
+          el("div", {}, [
+            el("div", { class: "person-row__name" }, p.title),
+            el("div", { class: "person-row__role" }, `Edited by ${p.editedBy} · Approved by ${p.approvedBy} · ${fmtDate(p.when)}`),
+          ]),
+          el("span", { class: "badge badge-neutral" }, "v" + p.version),
+        ])
+      );
+    });
+    host.appendChild(panel);
+  }
+}
+function approveDocReview(reviewId, reviewsContainerId) {
+  const idx = state.docReviews.awaiting.findIndex((r) => r.id === reviewId);
+  if (idx === -1) return;
+  const r = state.docReviews.awaiting[idx];
+  const priorVersions = state.docReviews.published.filter((p) => p.title === r.title).length;
+  state.docReviews.awaiting.splice(idx, 1);
+  state.docReviews.published.push({ id: genId("dp"), category: r.category, title: r.title, editedBy: r.editedBy, approvedBy: state.currentUser, when: TODAY, version: priorVersions + 1 });
+  showToast(`"${r.title}" approved and published (v${priorVersions + 1}).`, "success");
+  docReviewTabState[reviewsContainerId] = "published";
+  renderDocReviews(reviewsContainerId);
+}
 function renderDocGen(ids) {
-  const idOf = ids || { templates: "docgen-templates", form: "docgen-form", preview: "docgen-preview" };
+  const idOf = ids || { templates: "docgen-templates", form: "docgen-form", preview: "docgen-preview", reviews: "docgen-reviews" };
+  if (idOf.reviews) renderDocReviews(idOf.reviews);
   const wrap = byId(idOf.templates);
   wrap.innerHTML = "";
   state.docTemplates.forEach((t) => {
@@ -1499,11 +1579,11 @@ function renderDocGen(ids) {
   form.append(
     el("div", { class: "campaign-row" }, [el("label", {}, "Company:"), companySelect, el("label", {}, "Template:"), templateSelect]),
     el("div", { class: "campaign-row" }, [
-      el("button", { class: "btn btn-primary", onclick: () => generateDocument(companySelect.value, templateSelect.value, idOf.preview) }, "Generate document"),
+      el("button", { class: "btn btn-primary", onclick: () => generateDocument(companySelect.value, templateSelect.value, idOf.preview, idOf.reviews) }, "Generate document"),
     ])
   );
 }
-function generateDocument(companyId, templateId, previewId) {
+function generateDocument(companyId, templateId, previewId, reviewsContainerId) {
   const c = state.companies.find((x) => x.id === companyId);
   const t = state.docTemplates.find((x) => x.id === templateId);
   const primary = c.people.find((p) => p.primary) || c.people[0];
@@ -1519,8 +1599,10 @@ function generateDocument(companyId, templateId, previewId) {
   preview.style.display = "block";
   preview.innerHTML = "";
   preview.append(el("h3", {}, `${t.name} — ${c.name}`), el("p", {}, merged));
-  addTimeline(c, "document", `Generated document: ${t.name}`);
-  showToast(`"${t.name}" generated for ${c.name}.`, "success");
+  addTimeline(c, "document", `Generated document: ${t.name} (submitted for review)`);
+  state.docReviews.awaiting.push({ id: genId("dr"), category: t.name, title: `${t.name} — ${c.name}`, editedBy: state.currentUser, submitted: TODAY });
+  showToast(`"${t.name}" generated for ${c.name} — submitted for review.`, "success");
+  if (reviewsContainerId) { docReviewTabState[reviewsContainerId] = "awaiting"; renderDocReviews(reviewsContainerId); }
 }
 
 // -------------------------------------------------------------- handbook
@@ -1600,6 +1682,79 @@ function renderUsersUsage() {
     statCard("Documents generated", totalDocs, "Across all users", "accent-orange"),
     statCard("Active users", USERS.filter((u) => u.status === "Active").length, `of ${USERS.length} total`, "")
   );
+  renderToolUsagePanel("usage-ai-assist", TOOL_USAGE.aiAssist);
+  renderToolUsagePanel("usage-doc-generator", TOOL_USAGE.docGenerator);
+}
+function orgUsageBreakdown(totalProjects) {
+  const weighted = ORGANIZATIONS.filter((o) => o.users > 0);
+  const totalWeight = weighted.reduce((s, o) => s + o.users, 0);
+  return weighted
+    .map((o) => ({ name: o.name, count: Math.max(1, Math.round((o.users / totalWeight) * totalProjects)) }))
+    .sort((a, b) => b.count - a.count);
+}
+function renderToolUsagePanel(containerId, usage) {
+  const host = byId(containerId);
+  if (!host) return;
+  host.innerHTML = "";
+  host.append(
+    el("div", { class: "stat-grid", style: "grid-template-columns:repeat(3,1fr);margin-bottom:14px;" }, [
+      statCard("Organizations", usage.totalOrgs, "Registered", ""),
+      statCard("Total users", usage.totalUsers, "Across all organizations", ""),
+      statCard("Total projects", usage.totalProjects, "Across all organizations", ""),
+    ]),
+    el("div", { class: "cell-muted", style: "margin-bottom:8px;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:0.04em;" }, "Projects by organization"),
+    el("div", { class: "funnel" }, orgUsageBreakdown(usage.totalProjects).map((row) => {
+      const max = Math.max(...orgUsageBreakdown(usage.totalProjects).map((r) => r.count), 1);
+      return el("div", { class: "funnel-row" }, [
+        el("div", { class: "funnel-row__label" }, row.name),
+        el("div", { class: "funnel-row__bar-track" }, el("div", { class: "funnel-row__bar", style: `width:${(row.count / max) * 100}%` })),
+        el("div", { class: "funnel-row__count" }, String(row.count)),
+      ]);
+    }))
+  );
+}
+
+// ---------------------------------------------------------- feedback analysis
+function renderFeedbackAnalysis() {
+  const toolbar = byId("feedback-range-toolbar");
+  toolbar.innerHTML = "";
+  ["7 days", "30 days", "90 days", "All time"].forEach((range) => {
+    toolbar.append(el("button", { class: "chip-btn " + (state.feedbackRange === range ? "active" : ""), onclick: () => { state.feedbackRange = range; renderFeedbackAnalysis(); } }, range));
+  });
+
+  const stats = byId("feedback-stats");
+  stats.innerHTML = "";
+  const satisfaction = FEEDBACK_STATS.totalFeedback ? Math.round((FEEDBACK_STATS.totalPositive / FEEDBACK_STATS.totalFeedback) * 100) : 0;
+  stats.append(
+    statCard("Total Questions", FEEDBACK_STATS.totalQuestions, "", ""),
+    statCard("Total Feedback", FEEDBACK_STATS.totalFeedback, "", ""),
+    statCard("Total Positive", FEEDBACK_STATS.totalPositive, "", "accent-teal"),
+    statCard("Total Negative", FEEDBACK_STATS.totalNegative, "", ""),
+    statCard("Satisfaction", satisfaction + "%", "", ""),
+    statCard("With Comments", FEEDBACK_STATS.withComments, "", "")
+  );
+
+  const recent = byId("feedback-recent");
+  recent.innerHTML = "";
+  recent.append(el("p", { class: "cell-muted" }, `No feedback in this period (${state.feedbackRange}).`));
+
+  const topics = byId("feedback-topics");
+  topics.innerHTML = "";
+  FEEDBACK_STATS.topTopics.forEach((t) => {
+    topics.append(el("div", { class: "mini-item" }, [
+      el("div", { class: "mini-item__title" }, t.topic),
+      el("span", { class: "badge badge-navy" }, String(t.count)),
+    ]));
+  });
+
+  const sources = byId("feedback-sources");
+  sources.innerHTML = "";
+  FEEDBACK_STATS.topSources.forEach((s) => {
+    sources.append(el("div", { class: "mini-item" }, [
+      el("div", { class: "mini-item__title" }, s.source),
+      el("span", { class: "badge badge-teal" }, String(s.count)),
+    ]));
+  });
 }
 
 // ------------------------------------------------------- platform view (orgs)

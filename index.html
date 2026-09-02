@@ -38,11 +38,12 @@
       <button class="nav-btn" data-view="cms" data-mode="both">Website</button>
       <button class="nav-btn" data-view="organizations" data-mode="both">Organizations</button>
       <button class="nav-btn" data-view="users" data-mode="both">Users</button>
+      <button class="nav-btn" data-view="feedback" data-mode="both">Feedback Analysis</button>
+      <button class="nav-btn" data-view="phandbook" data-mode="both">Handbook</button>
+      <button class="nav-btn" data-view="pdocgen" data-mode="both">Document Generator</button>
       <button class="nav-btn" data-view="pevents" data-mode="platform">Events</button>
       <button class="nav-btn" data-view="ptraining" data-mode="platform">Training</button>
       <button class="nav-btn" data-view="pbenefits" data-mode="platform">Benefits</button>
-      <button class="nav-btn" data-view="phandbook" data-mode="platform">Handbook</button>
-      <button class="nav-btn" data-view="pdocgen" data-mode="platform">Document Generator</button>
     </nav>
 
     <div class="sidebar__footer">
@@ -108,6 +109,25 @@
           <div id="dashboard-events" class="mini-list"></div>
         </div>
       </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel__head"><h2>Platform usage</h2><a class="link-btn" data-goto="users" data-goto-subtab="users-usage">Open usage →</a></div>
+          <div id="dashboard-usage" class="stat-grid"></div>
+        </div>
+        <div class="panel">
+          <div class="panel__head"><h2>Quick links</h2></div>
+          <div class="mini-list">
+            <a class="mini-item" data-goto="phandbook" style="text-decoration:none;color:inherit;">
+              <div class="mini-item__main"><div class="mini-item__title">Handbook</div><div class="mini-item__meta">Member handbook access point</div></div>
+              <span class="badge badge-navy">Open →</span>
+            </a>
+            <a class="mini-item" data-goto="pdocgen" style="text-decoration:none;color:inherit;">
+              <div class="mini-item__main"><div class="mini-item__title">Document Generator</div><div class="mini-item__meta">Generate member documents</div></div>
+              <span class="badge badge-navy">Open →</span>
+            </a>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- MEMBERS (Pipeline / Renewals / Directory / Benefits / Documents / Handbook) -->
@@ -168,6 +188,8 @@
       </div>
 
       <div id="members-documents" class="subtab-panel">
+        <p>Review and publish edits submitted for member documents.</p>
+        <div id="docgen-reviews"></div>
         <div class="panel">
           <div class="panel__head"><h2>Templates</h2></div>
           <div id="docgen-templates" class="workflow-list"></div>
@@ -361,8 +383,44 @@
         <div id="users-table" class="data-table"></div>
       </div>
       <div id="users-usage" class="subtab-panel">
-        <p class="subtab-intro">Illustrative — shared usage-analytics infrastructure across both views, not yet built.</p>
         <div id="users-usage-grid" class="stat-grid"></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel__head"><h2>AI Assist Usage</h2></div>
+            <div id="usage-ai-assist"></div>
+          </div>
+          <div class="panel">
+            <div class="panel__head"><h2>Document Generator Usage</h2></div>
+            <div id="usage-doc-generator"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEEDBACK ANALYSIS -->
+    <section class="view" id="view-feedback" data-view="feedback">
+      <div class="view-head">
+        <h1>Feedback Analysis</h1>
+        <p>Review user feedback and comments on chats to improve answer quality.</p>
+      </div>
+      <div class="toolbar" id="feedback-range-toolbar" style="justify-content:flex-end;"></div>
+      <div id="feedback-stats" class="stat-grid"></div>
+      <div class="panel">
+        <div class="panel__head"><h2>Recent feedback</h2></div>
+        <p class="cell-muted" style="margin-bottom:10px;">Question, answer, and who raised it — for the current filters and date range.</p>
+        <div id="feedback-recent"></div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel__head"><h2>Top 10 topics</h2></div>
+          <p class="cell-muted" style="margin-bottom:10px;">Most common subjects people are asking questions about.</p>
+          <div id="feedback-topics" class="mini-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel__head"><h2>Top 10 sources</h2></div>
+          <p class="cell-muted" style="margin-bottom:10px;">Documents most referenced in rated answers.</p>
+          <div id="feedback-sources" class="mini-list"></div>
+        </div>
       </div>
     </section>
 
@@ -437,8 +495,9 @@
     <section class="view" id="view-pdocgen" data-view="pdocgen">
       <div class="view-head">
         <h1>Document Generator</h1>
-        <p>Templates staff can edit, and a quick way to generate a merged document.</p>
+        <p>Review and publish edits submitted for member documents.</p>
       </div>
+      <div id="pdocgen-reviews"></div>
       <div class="panel">
         <div class="panel__head"><h2>Templates</h2></div>
         <div id="pdocgen-templates" class="workflow-list"></div>

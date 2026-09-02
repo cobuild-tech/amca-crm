@@ -130,14 +130,14 @@ select, input { font-family: inherit; font-size: 14px; }
 /* ------------------------------------------------------------------ subtabs */
 .subtabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; }
 .subtabs.subtabs--nested { border-bottom: none; margin: 4px 0 12px; }
-.subtab-btn, .subtab-btn2 {
+.subtab-btn, .subtab-btn2, .doc-tab-btn {
   border: none; background: transparent; color: var(--text-muted); font-weight: 700; font-size: 13px;
   padding: 9px 4px; margin-right: 18px; white-space: nowrap; border-bottom: 2px solid transparent;
 }
-.subtab-btn2 { padding: 6px 10px; margin-right: 6px; border: 1px solid var(--border); border-radius: 999px; }
-.subtab-btn:hover, .subtab-btn2:hover { color: var(--amca-navy-dark); }
+.subtab-btn2, .doc-tab-btn { padding: 6px 10px; margin-right: 6px; border: 1px solid var(--border); border-radius: 999px; }
+.subtab-btn:hover, .subtab-btn2:hover, .doc-tab-btn:hover { color: var(--amca-navy-dark); }
 .subtab-btn.active { color: var(--amca-navy-dark); border-bottom-color: var(--amca-navy); }
-.subtab-btn2.active { background: var(--amca-navy); border-color: var(--amca-navy); color: var(--on-accent); }
+.subtab-btn2.active, .doc-tab-btn.active { background: var(--amca-navy); border-color: var(--amca-navy); color: var(--on-accent); }
 .subtab-panel, .subtab-panel2 { display: none; }
 .subtab-panel.active, .subtab-panel2.active { display: block; animation: fadeIn 0.15s ease; }
 .subtab-intro { margin-bottom: 14px; max-width: 760px; }
