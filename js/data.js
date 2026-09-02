@@ -31,6 +31,27 @@ const RENEWAL_STAGES = [
   { id: "lapsed", label: "Lapsed" },
 ];
 
+// ---------------------------------------------------------------------------
+// What gets collected at Enquiry vs. the Application/follow-up stage —
+// configurable from Settings so the intake form can change without a
+// code change.
+// ---------------------------------------------------------------------------
+const ENQUIRY_FORM_FIELDS = [
+  { id: "f1", label: "Business name", type: "text", required: true },
+  { id: "f2", label: "ABN", type: "text", required: false },
+  { id: "f3", label: "Contact name", type: "text", required: true },
+  { id: "f4", label: "Email", type: "text", required: true },
+  { id: "f5", label: "Phone", type: "text", required: true },
+  { id: "f6", label: "Membership category interested in", type: "select", required: true },
+  { id: "f7", label: "How did you hear about AMCA?", type: "text", required: false },
+];
+const FOLLOWUP_FORM_FIELDS = [
+  { id: "g1", label: "Number of employees", type: "text", required: false },
+  { id: "g2", label: "Years in operation", type: "text", required: false },
+  { id: "g3", label: "Current licences held", type: "text", required: false },
+  { id: "g4", label: "Preferred onboarding call time", type: "text", required: false },
+];
+
 const MEMBER_CATEGORIES = [
   "Contractor Member",
   "Corporate Member",
@@ -629,12 +650,37 @@ const CURRENT_USER = "Michael Hamilton";
 // delegated sub-account with their own users.
 // ---------------------------------------------------------------------------
 const ORGANIZATIONS = [
-  { id: "org1", name: "AMCA National", status: "Active", users: 5, createdDate: "2018-01-10" },
-  { id: "org2", name: "AMCA QLD Chapter", status: "Active", users: 3, createdDate: "2019-04-22" },
-  { id: "org3", name: "AMCA VIC Chapter", status: "Active", users: 2, createdDate: "2019-06-15" },
-  { id: "org4", name: "AMCA WA Chapter", status: "Active", users: 1, createdDate: "2020-02-03" },
-  { id: "org5", name: "AMCA NSW Chapter", status: "Invited", users: 0, createdDate: "2026-08-20" },
+  { id: "org1", name: "AMCA National", status: "Active", users: 5, createdDate: "2018-01-10", region: null },
+  { id: "org2", name: "AMCA QLD Chapter", status: "Active", users: 3, createdDate: "2019-04-22", region: "QLD" },
+  { id: "org3", name: "AMCA VIC Chapter", status: "Active", users: 2, createdDate: "2019-06-15", region: "VIC" },
+  { id: "org4", name: "AMCA WA Chapter", status: "Active", users: 1, createdDate: "2020-02-03", region: "WA" },
+  { id: "org5", name: "AMCA NSW Chapter", status: "Invited", users: 0, createdDate: "2026-08-20", region: "NSW" },
 ];
+
+// Per-organization user access grants — who has access, and for how long.
+// A null accessTo means the grant is still current.
+const ORG_USER_ACCESS = {
+  org1: [
+    { user: "Ben Hawkins", accessFrom: "2018-01-10", accessTo: null },
+    { user: "Michael Hamilton", accessFrom: "2018-03-01", accessTo: null },
+    { user: "Marie Neisler", accessFrom: "2019-02-14", accessTo: null },
+    { user: "Brooke Alexander", accessFrom: "2020-07-01", accessTo: null },
+    { user: "Andrew Kendt", accessFrom: "2018-01-10", accessTo: null },
+  ],
+  org2: [
+    { user: "Brendan Keogh", accessFrom: "2019-04-22", accessTo: null },
+    { user: "John Castillo", accessFrom: "2021-05-10", accessTo: null },
+    { user: "Kalli Ercegovic", accessFrom: "2022-08-01", accessTo: null },
+  ],
+  org3: [
+    { user: "Ben Fogerty", accessFrom: "2019-06-15", accessTo: null },
+    { user: "Brendan Upton", accessFrom: "2023-01-20", accessTo: "2026-06-30" },
+  ],
+  org4: [
+    { user: "Michael Hamilton", accessFrom: "2020-02-03", accessTo: null },
+  ],
+  org5: [],
+};
 
 // ---------------------------------------------------------------------------
 // Digital Handbook — built and maintained in a separate system; the CRM only
@@ -650,13 +696,22 @@ const HANDBOOK = {
 };
 
 // ---------------------------------------------------------------------------
-// Document Generator — a Safe Work Method Statement (SWMS) repository, not a
-// membership-document tool. Settings → Document Templates manages the base
-// entry for each document; this view is the review → publish → version
-// history workflow for edits made against it. Each document carries its own
-// history (submitted / published / rejected / restored events) and an
-// optional `pending` submission awaiting a decision.
+// Document Generator — a safety-document library (Safety Hub / WHSMS style),
+// not a membership-document tool. Settings → Document Templates manages the
+// base entry for each document; the Library groups them by category, and
+// each document carries its own review → publish → version history (an
+// optional `pending` submission awaiting a decision, plus a history log).
 // ---------------------------------------------------------------------------
+const DOC_CATEGORIES = [
+  { key: "SWI", label: "Safe Work Instructions", description: "One instruction per task — the hazards, risks and controls." },
+  { key: "SWMS", label: "Safe Work Method Statements", description: "Required for high-risk construction work — whole work packages." },
+  { key: "SSP", label: "Safety System Procedures", description: "How the system runs: risk management, incidents, training." },
+  { key: "POL", label: "Safety Policies", description: "The company's health and safety policy commitments." },
+  { key: "SRR", label: "Safety Roles & Responsibilities", description: "What each role in the organisation is responsible for." },
+  { key: "MSP", label: "Management System Procedures", description: "ISO45001 management-system procedures behind the safety system." },
+  { key: "PSP", label: "Project Site Safety Plans", description: "How a project's site-specific safety plan is structured and run." },
+];
+
 const DOC_TEMPLATES = [
   {
     id: "d1", code: "SWMS-001", title: "HVAC Equipment Installation SWMS", category: "SWMS", appliesTo: "Installation crews",
@@ -690,6 +745,57 @@ const DOC_TEMPLATES = [
     id: "d4", code: "SWMS-004", title: "Working at Heights SWMS", category: "SWMS", appliesTo: "Roof and plant room work",
     overview: "Scope: roof-mounted plant access and maintenance. Hazards: falls, weather exposure. Controls: harness and anchor point inspection, exclusion zone, weather hold criteria.",
     active: false, updated: "2026-04-22", liveVersion: 0, pending: null, history: [],
+  },
+  {
+    id: "d5", code: "SWI-001", title: "Undertaking Hazardous Manual Handling", category: "SWI", appliesTo: "All site personnel",
+    overview: "The task-level instruction for manual handling: correct lifting technique, team-lift thresholds, and when to use mechanical aids.",
+    active: true, updated: "2026-06-10", liveVersion: 1, pending: null,
+    history: [{ type: "published", actor: "Ben Fogerty", date: "2026-06-10", version: 1 }],
+  },
+  {
+    id: "d6", code: "SWI-002", title: "Use of Crane", category: "SWI", appliesTo: "Crane operators & dogman",
+    overview: "The task-level instruction for crane lifts: exclusion zones, dogman signals, load charts, and weather limits.",
+    active: true, updated: "2026-05-22", liveVersion: 1, pending: null,
+    history: [{ type: "published", actor: "Ben Fogerty", date: "2026-05-22", version: 1 }],
+  },
+  {
+    id: "d7", code: "SSP-001", title: "Incident Reporting & Investigation", category: "SSP", appliesTo: "All staff and site personnel",
+    overview: "How an incident, near-miss or hazard gets reported, who investigates, and how corrective actions are tracked to closure.",
+    active: true, updated: "2026-07-14", liveVersion: 1, pending: null,
+    history: [{ type: "published", actor: "Andrew Kendt", date: "2026-07-14", version: 1 }],
+  },
+  {
+    id: "d8", code: "SSP-002", title: "Toolbox Talk Procedure", category: "SSP", appliesTo: "Site supervisors",
+    overview: "The minimum standard for a toolbox talk: frequency, required topics, and how attendance is recorded.",
+    active: true, updated: "2026-06-28", liveVersion: 1, pending: null,
+    history: [{ type: "published", actor: "John Castillo", date: "2026-06-28", version: 1 }],
+  },
+  {
+    id: "d9", code: "POL-001", title: "Work Health & Safety Policy", category: "POL", appliesTo: "Whole organisation",
+    overview: "AMCA's overarching WHS policy commitment, signed by the CEO, reviewed annually.",
+    active: true, updated: "2026-01-15", liveVersion: 2, pending: null,
+    history: [
+      { type: "published", actor: "Ben Hawkins", date: "2026-01-15", version: 2 },
+      { type: "published", actor: "Ben Hawkins", date: "2025-01-12", version: 1 },
+    ],
+  },
+  {
+    id: "d10", code: "SRR-001", title: "Site Supervisor Responsibilities", category: "SRR", appliesTo: "Site supervisors",
+    overview: "What a site supervisor is accountable for under the safety system: inductions, toolbox talks, incident escalation.",
+    active: true, updated: "2026-03-02", liveVersion: 1, pending: null,
+    history: [{ type: "published", actor: "Ben Fogerty", date: "2026-03-02", version: 1 }],
+  },
+  {
+    id: "d11", code: "MSP-001", title: "ISO45001 Internal Audit Procedure", category: "MSP", appliesTo: "Safety & compliance team",
+    overview: "How the internal audit schedule for the ISO45001 management system is planned, run and closed out.",
+    active: true, updated: "2026-02-18", liveVersion: 1, pending: null,
+    history: [{ type: "published", actor: "Andrew Kendt", date: "2026-02-18", version: 1 }],
+  },
+  {
+    id: "d12", code: "PSP-001", title: "Standard Project Site Safety Plan", category: "PSP", appliesTo: "Project managers",
+    overview: "The template structure for a project's site-specific safety plan: scope, hazards, emergency procedures, key contacts.",
+    active: true, updated: "2026-04-08", liveVersion: 1, pending: null,
+    history: [{ type: "published", actor: "Ben Fogerty", date: "2026-04-08", version: 1 }],
   },
 ];
 

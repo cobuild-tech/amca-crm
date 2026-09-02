@@ -102,6 +102,16 @@ select, input { font-family: inherit; font-size: 14px; }
 }
 .nav-btn:hover { background: var(--amca-navy-light); color: var(--amca-navy-dark); }
 .nav-btn.active { background: var(--amca-navy); color: var(--on-accent); }
+.nav-group-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 14px 12px 4px;
+  opacity: 0.7;
+}
+.nav-group-label:first-child { padding-top: 4px; }
 
 .sidebar__footer { border-top: 1px solid var(--border); padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .settings-wrap { position: relative; display: flex; }
@@ -142,6 +152,8 @@ select, input { font-family: inherit; font-size: 14px; }
 .subtab-btn2.active, .doc-tab-btn.active { background: var(--amca-navy); border-color: var(--amca-navy); color: var(--on-accent); }
 .subtab-panel, .subtab-panel2 { display: none; }
 .subtab-panel.active, .subtab-panel2.active { display: block; animation: fadeIn 0.15s ease; }
+.usage-tab-panel { display: none; }
+.usage-tab-panel.active { display: block; animation: fadeIn 0.15s ease; }
 .subtab-intro { margin-bottom: 14px; max-width: 760px; }
 
 .view-head { margin-bottom: 20px; }
@@ -334,6 +346,8 @@ select, input { font-family: inherit; font-size: 14px; }
 /* -------------------------------------------------------------- benefits/cms */
 .benefits-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 .benefit-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; }
+.benefit-card.clickable { cursor: pointer; transition: border-color 0.15s; }
+.benefit-card.clickable:hover { border-color: var(--amca-navy); }
 .benefit-card__top { display: flex; justify-content: space-between; align-items: center; }
 .benefit-card h3 { font-size: 15px; }
 .benefit-card__desc { font-size: 13px; }

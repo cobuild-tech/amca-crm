@@ -28,19 +28,24 @@
     </div>
 
     <nav class="sidebar__nav" id="main-nav">
+      <div class="nav-group-label" data-mode="crm">Overview</div>
       <button class="nav-btn active" data-view="action" data-mode="crm">Action Center</button>
       <button class="nav-btn" data-view="dashboard" data-mode="crm">Dashboard</button>
+
+      <div class="nav-group-label" data-mode="crm">Membership</div>
       <button class="nav-btn" data-view="members" data-mode="crm">Members</button>
       <button class="nav-btn" data-view="nonmembers" data-mode="crm">Non-Members</button>
       <button class="nav-btn" data-view="newsletter" data-mode="crm">Newsletter</button>
       <button class="nav-btn" data-view="events" data-mode="crm">Events</button>
       <button class="nav-btn" data-view="training" data-mode="crm">Training</button>
+
+      <div class="nav-group-label" data-mode="both">Website &amp; Content</div>
       <button class="nav-btn" data-view="cms" data-mode="both">Website</button>
-      <button class="nav-btn" data-view="organizations" data-mode="both">Organizations</button>
-      <button class="nav-btn" data-view="users" data-mode="both">Users</button>
-      <button class="nav-btn" data-view="feedback" data-mode="both">Feedback Analysis</button>
       <button class="nav-btn" data-view="phandbook" data-mode="both">Handbook</button>
       <button class="nav-btn" data-view="pdocgen" data-mode="both">Document Generator</button>
+
+      <div class="nav-group-label" data-mode="both">Platform</div>
+      <button class="nav-btn" data-view="organizations" data-mode="both">Organizations</button>
       <button class="nav-btn" data-view="pevents" data-mode="platform">Events</button>
       <button class="nav-btn" data-view="ptraining" data-mode="platform">Training</button>
       <button class="nav-btn" data-view="pbenefits" data-mode="platform">Benefits</button>
@@ -50,10 +55,12 @@
       <div class="settings-wrap" id="settings-wrap">
         <button class="gear-btn" id="settings-gear" aria-label="Settings" title="Settings">⚙</button>
         <div class="settings-popover" id="settings-popover">
+          <button data-view="users">User Management</button>
+          <button data-view="pipelinestages">Pipeline Stages</button>
+          <button data-view="formfields">Enquiry &amp; Follow-up Forms</button>
           <button data-view="automation">Automation Settings</button>
           <button data-view="doctemplates">Document Templates</button>
           <button data-view="integrations">Integrations</button>
-          <button data-view="users">User Management</button>
         </div>
       </div>
       <div class="sidebar__user">
@@ -374,6 +381,52 @@
       <div id="doctemplates-list" class="workflow-list"></div>
     </section>
 
+    <!-- PIPELINE STAGES (via gear) -->
+    <section class="view" id="view-pipelinestages" data-view="pipelinestages">
+      <div class="view-head">
+        <h1>Pipeline Stages</h1>
+        <p>The columns shown on the New Member and Renewal pipeline boards — rename, reorder, add or remove stages.</p>
+      </div>
+      <div class="panel">
+        <div class="panel__head">
+          <h2>New member pipeline</h2>
+          <button class="btn btn-sm btn-primary" id="onboard-stage-add-btn">+ Add stage</button>
+        </div>
+        <p class="cell-muted" style="margin-bottom:10px;">Note: the actions available on a card (raise invoice, mark paid, activate) are tied to the built-in stages. Custom stages get a generic "move to next stage" action.</p>
+        <div id="onboard-stages-list" class="workflow-list"></div>
+      </div>
+      <div class="panel">
+        <div class="panel__head">
+          <h2>Renewal pipeline</h2>
+          <button class="btn btn-sm btn-primary" id="renewal-stage-add-btn">+ Add stage</button>
+        </div>
+        <p class="cell-muted" style="margin-bottom:10px;">Renewal columns are driven by renewal dates and invoice status — renaming and reordering the built-in stages is supported; custom stages will not receive companies automatically.</p>
+        <div id="renewal-stages-list" class="workflow-list"></div>
+      </div>
+    </section>
+
+    <!-- ENQUIRY & FOLLOW-UP FORMS (via gear) -->
+    <section class="view" id="view-formfields" data-view="formfields">
+      <div class="view-head">
+        <h1>Enquiry &amp; Follow-up Forms</h1>
+        <p>The fields collected on the initial enquiry form, and on the follow-up form used while qualifying a prospect.</p>
+      </div>
+      <div class="panel">
+        <div class="panel__head">
+          <h2>Enquiry form</h2>
+          <button class="btn btn-sm btn-primary" id="enquiry-field-add-btn">+ Add field</button>
+        </div>
+        <div id="enquiry-fields-list" class="workflow-list"></div>
+      </div>
+      <div class="panel">
+        <div class="panel__head">
+          <h2>Follow-up form</h2>
+          <button class="btn btn-sm btn-primary" id="followup-field-add-btn">+ Add field</button>
+        </div>
+        <div id="followup-fields-list" class="workflow-list"></div>
+      </div>
+    </section>
+
     <!-- INTEGRATIONS (via gear) -->
     <section class="view" id="view-integrations" data-view="integrations">
       <div class="view-head">
@@ -402,42 +455,46 @@
       </div>
       <div id="users-usage" class="subtab-panel">
         <div id="users-usage-grid" class="stat-grid"></div>
-        <div class="grid-2">
+        <div class="subtabs subtabs--nested" id="usage-tabs">
+          <button class="doc-tab-btn active" data-usagetab="chat">Chat</button>
+          <button class="doc-tab-btn" data-usagetab="docgen">Document Generator</button>
+        </div>
+
+        <div id="usage-tab-chat" class="usage-tab-panel active">
           <div class="panel">
-            <div class="panel__head"><h2>AI Assist Usage</h2></div>
+            <div class="panel__head"><h2>Chat Usage</h2></div>
             <div id="usage-ai-assist"></div>
           </div>
+          <div class="panel">
+            <div class="panel__head"><h2>Chat Feedback</h2></div>
+            <p class="cell-muted" style="margin-bottom:10px;">Review user feedback and comments on chats to improve answer quality.</p>
+            <div class="toolbar" id="feedback-range-toolbar" style="justify-content:flex-end;"></div>
+            <div id="feedback-stats" class="stat-grid"></div>
+            <div class="panel" style="margin-top:14px;">
+              <div class="panel__head"><h2>Recent feedback</h2></div>
+              <p class="cell-muted" style="margin-bottom:10px;">Question, answer, and who raised it — for the current filters and date range.</p>
+              <div id="feedback-recent"></div>
+            </div>
+            <div class="grid-2">
+              <div class="panel">
+                <div class="panel__head"><h2>Top 10 topics</h2></div>
+                <p class="cell-muted" style="margin-bottom:10px;">Most common subjects people are asking questions about.</p>
+                <div id="feedback-topics" class="mini-list"></div>
+              </div>
+              <div class="panel">
+                <div class="panel__head"><h2>Top 10 sources</h2></div>
+                <p class="cell-muted" style="margin-bottom:10px;">Documents most referenced in rated answers.</p>
+                <div id="feedback-sources" class="mini-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="usage-tab-docgen" class="usage-tab-panel">
           <div class="panel">
             <div class="panel__head"><h2>Document Generator Usage</h2></div>
             <div id="usage-doc-generator"></div>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- FEEDBACK ANALYSIS -->
-    <section class="view" id="view-feedback" data-view="feedback">
-      <div class="view-head">
-        <h1>Feedback Analysis</h1>
-        <p>Review user feedback and comments on chats to improve answer quality.</p>
-      </div>
-      <div class="toolbar" id="feedback-range-toolbar" style="justify-content:flex-end;"></div>
-      <div id="feedback-stats" class="stat-grid"></div>
-      <div class="panel">
-        <div class="panel__head"><h2>Recent feedback</h2></div>
-        <p class="cell-muted" style="margin-bottom:10px;">Question, answer, and who raised it — for the current filters and date range.</p>
-        <div id="feedback-recent"></div>
-      </div>
-      <div class="grid-2">
-        <div class="panel">
-          <div class="panel__head"><h2>Top 10 topics</h2></div>
-          <p class="cell-muted" style="margin-bottom:10px;">Most common subjects people are asking questions about.</p>
-          <div id="feedback-topics" class="mini-list"></div>
-        </div>
-        <div class="panel">
-          <div class="panel__head"><h2>Top 10 sources</h2></div>
-          <p class="cell-muted" style="margin-bottom:10px;">Documents most referenced in rated answers.</p>
-          <div id="feedback-sources" class="mini-list"></div>
         </div>
       </div>
     </section>
@@ -540,6 +597,17 @@
     <button id="doc-detail-close" class="icon-btn" aria-label="Close">✕</button>
   </div>
   <div id="doc-detail-body" class="drawer__body"></div>
+</aside>
+
+
+<!-- Organization detail drawer -->
+<div id="org-detail-drawer-overlay" class="drawer-overlay"></div>
+<aside id="org-detail-drawer" class="drawer">
+  <div class="drawer__head">
+    <h2 id="org-detail-title">Organization</h2>
+    <button id="org-detail-close" class="icon-btn" aria-label="Close">✕</button>
+  </div>
+  <div id="org-detail-body" class="drawer__body"></div>
 </aside>
 
 <div id="toast-container" class="toast-container"></div>

@@ -7,8 +7,6 @@
    stays consistent across runs.
    ========================================================================== */
 
-const ONBOARD_ORDER = ONBOARDING_STAGES.map((s) => s.id);
-const ONBOARD_LABEL = Object.fromEntries(ONBOARDING_STAGES.map((s) => [s.id, s.label]));
 const CATEGORY_FEES = { "Contractor Member": 1650, "Corporate Member": 3200, "Associate Member": 980, "Affiliate Member": 500 };
 
 const state = {
@@ -28,6 +26,10 @@ const state = {
   trainingsMoodleSynced: false,
   trainingsVetTrakSynced: false,
   docTemplates: JSON.parse(JSON.stringify(DOC_TEMPLATES)),
+  onboardingStages: JSON.parse(JSON.stringify(ONBOARDING_STAGES)),
+  renewalStages: JSON.parse(JSON.stringify(RENEWAL_STAGES)),
+  enquiryFields: JSON.parse(JSON.stringify(ENQUIRY_FORM_FIELDS)),
+  followupFields: JSON.parse(JSON.stringify(FOLLOWUP_FORM_FIELDS)),
   feedbackRange: "30 days",
   view: "action",
   appMode: "crm",
@@ -138,8 +140,26 @@ function getRenewalBoardStage(c) {
   if (d != null && d <= 90) return "upcoming";
   return null;
 }
+function getOnboardOrder() {
+  return state.onboardingStages.map((s) => s.id);
+}
+function getOnboardLabel(id) {
+  const s = state.onboardingStages.find((x) => x.id === id);
+  return s ? s.label : id;
+}
+function getOnboardStages() {
+  return state.onboardingStages;
+}
+function getRenewalStages() {
+  return state.renewalStages;
+}
+function nextStageId(order, currentId) {
+  const idx = order.indexOf(currentId);
+  if (idx === -1 || idx >= order.length - 1) return null;
+  return order[idx + 1];
+}
 function getCompanyStatusLabel(c) {
-  if (c.memberState === "prospect") return ONBOARD_LABEL[c.onboardingStage];
+  if (c.memberState === "prospect") return getOnboardLabel(c.onboardingStage);
   if (c.memberState === "lapsed") return "Lapsed";
   const rs = getRenewalBoardStage(c);
   if (rs === "invoice_sent") return "Renewal Invoice Sent";
@@ -181,6 +201,8 @@ function renderView(viewId) {
     case "automation": return renderAutomation();
     case "doctemplates": return renderDocTemplatesSettings();
     case "integrations": return renderIntegrations();
+    case "pipelinestages": return renderPipelineStagesSettings();
+    case "formfields": return renderFormFieldsSettings();
     case "users": return renderUsersView();
     case "organizations": return renderOrganizations();
     case "pevents": return renderEventsSimple();
@@ -188,7 +210,6 @@ function renderView(viewId) {
     case "pbenefits": return renderBenefitsSimple();
     case "phandbook": return renderHandbookPanel("phandbook-panel");
     case "pdocgen": return renderDocGen({ reviews: "pdocgen-reviews" });
-    case "feedback": return renderFeedbackAnalysis();
   }
 }
 
@@ -371,8 +392,8 @@ function renderDashboard() {
 
   const funnel = byId("dashboard-funnel");
   funnel.innerHTML = "";
-  const max = Math.max(...ONBOARDING_STAGES.map((s) => state.companies.filter((c) => c.memberState === "prospect" && c.onboardingStage === s.id).length), 1);
-  ONBOARDING_STAGES.forEach((s) => {
+  const max = Math.max(...state.onboardingStages.map((s) => state.companies.filter((c) => c.memberState === "prospect" && c.onboardingStage === s.id).length), 1);
+  state.onboardingStages.forEach((s) => {
     const count = state.companies.filter((c) => c.memberState === "prospect" && c.onboardingStage === s.id).length;
     funnel.append(
       el("div", { class: "funnel-row" }, [
@@ -440,7 +461,7 @@ function renderDashboard() {
 function renderPipelineNew() {
   const board = byId("pipeline-board-new");
   board.innerHTML = "";
-  ONBOARDING_STAGES.forEach((stage) => {
+  state.onboardingStages.forEach((stage) => {
     const companies = state.companies.filter((c) => c.memberState === "prospect" && c.onboardingStage === stage.id);
     const col = el("div", { class: "pipeline-col" }, [
       el("div", { class: "pipeline-col__head" }, [
@@ -460,12 +481,21 @@ function onboardingCard(c) {
   card.addEventListener("click", (e) => { if (e.target.tagName !== "BUTTON") openDrawer(c.id); });
   const actions = el("div", { class: "pipeline-card__actions" });
   const stage = c.onboardingStage;
-  if (stage === "enquiry") actions.append(actionBtn("→ Qualifying", () => moveOnboarding(c.id, "qualifying", "Moved to Qualifying")));
-  if (stage === "qualifying") actions.append(actionBtn("→ Application", () => moveOnboarding(c.id, "application", "Membership application submitted for review")));
-  if (stage === "application") actions.append(actionBtn("→ Proposal / Quote", () => moveOnboarding(c.id, "proposal", "Membership proposal & quote sent")));
-  if (stage === "proposal") actions.append(actionBtn("Raise invoice (Xero)", () => raiseNewMemberInvoice(c.id)));
-  if (stage === "invoice") actions.append(actionBtn("Mark paid (Xero)", () => markProspectInvoicePaid(c.id)));
-  if (stage === "payment") actions.append(actionBtn("Activate membership", () => activateCompany(c.id)));
+  const order = getOnboardOrder();
+  const has = (id) => order.includes(id);
+  let matched = true;
+  if (stage === "enquiry" && has("qualifying")) actions.append(actionBtn("→ Qualifying", () => moveOnboarding(c.id, "qualifying", "Moved to Qualifying")));
+  else if (stage === "qualifying" && has("application")) actions.append(actionBtn("→ Application", () => moveOnboarding(c.id, "application", "Membership application submitted for review")));
+  else if (stage === "application" && has("proposal")) actions.append(actionBtn("→ Proposal / Quote", () => moveOnboarding(c.id, "proposal", "Membership proposal & quote sent")));
+  else if (stage === "proposal" && has("invoice")) actions.append(actionBtn("Raise invoice (Xero)", () => raiseNewMemberInvoice(c.id)));
+  else if (stage === "invoice" && has("payment")) actions.append(actionBtn("Mark paid (Xero)", () => markProspectInvoicePaid(c.id)));
+  else if (stage === "payment") actions.append(actionBtn("Activate membership", () => activateCompany(c.id)));
+  else matched = false;
+  if (!matched) {
+    const next = nextStageId(order, stage);
+    if (next) actions.append(actionBtn(`→ ${getOnboardLabel(next)}`, () => moveOnboarding(c.id, next, `Moved to ${getOnboardLabel(next)}`)));
+    else actions.append(actionBtn("Activate membership", () => activateCompany(c.id)));
+  }
   card.appendChild(actions);
   return card;
 }
@@ -476,7 +506,7 @@ function moveOnboarding(companyId, nextStage, note) {
   const c = state.companies.find((x) => x.id === companyId);
   c.onboardingStage = nextStage;
   addTimeline(c, "status", note);
-  showToast(`${c.name} moved to "${ONBOARD_LABEL[nextStage]}".`, "info");
+  showToast(`${c.name} moved to "${getOnboardLabel(nextStage)}".`, "info");
 }
 function raiseNewMemberInvoice(companyId) {
   const c = state.companies.find((x) => x.id === companyId);
@@ -513,7 +543,7 @@ function renderPipelineRenewal() {
   const board = byId("pipeline-board-renewal");
   if (!board) return;
   board.innerHTML = "";
-  RENEWAL_STAGES.forEach((stage) => {
+  state.renewalStages.forEach((stage) => {
     const companies = state.companies.filter((c) => getRenewalBoardStage(c) === stage.id);
     const groupAttrs = stage.id === "renewed" ? { "data-group": "member" } : stage.id === "lapsed" ? { "data-group": "former" } : {};
     const col = el("div", { class: "pipeline-col", ...groupAttrs }, [
@@ -621,7 +651,7 @@ function renderCompanies() {
   if (catSel.options.length <= 1) MEMBER_CATEGORIES.forEach((cat) => catSel.append(el("option", { value: cat }, cat)));
   const stageSel = byId("company-filter-stage");
   if (stageSel.options.length <= 1) {
-    ONBOARDING_STAGES.forEach((s) => stageSel.append(el("option", { value: "onboarding:" + s.id }, s.label)));
+    state.onboardingStages.forEach((s) => stageSel.append(el("option", { value: "onboarding:" + s.id }, s.label)));
     stageSel.append(el("option", { value: "active" }, "Active"));
     stageSel.append(el("option", { value: "lapsed" }, "Lapsed"));
   }
@@ -1568,6 +1598,7 @@ function renderCmsPanel(key) {
 
 // -------------------------------------------------------------- document gen
 const docRepoTabState = {};
+const docLibraryCategoryState = {};
 function renderDocReviews(reviewsContainerId) {
   const host = byId(reviewsContainerId);
   if (!host) return;
@@ -1578,7 +1609,7 @@ function renderDocReviews(reviewsContainerId) {
   const pending = state.docTemplates.filter((d) => d.pending);
   const tabs = el("div", { class: "subtabs subtabs--nested" }, [
     el("button", { class: "doc-tab-btn " + (activeTab === "awaiting" ? "active" : ""), onclick: () => { docRepoTabState[reviewsContainerId] = "awaiting"; renderDocReviews(reviewsContainerId); } }, `Awaiting review (${pending.length})`),
-    el("button", { class: "doc-tab-btn " + (activeTab === "repo" ? "active" : ""), onclick: () => { docRepoTabState[reviewsContainerId] = "repo"; renderDocReviews(reviewsContainerId); } }, "Repository"),
+    el("button", { class: "doc-tab-btn " + (activeTab === "repo" ? "active" : ""), onclick: () => { docRepoTabState[reviewsContainerId] = "repo"; renderDocReviews(reviewsContainerId); } }, "Library"),
   ]);
   host.appendChild(tabs);
 
@@ -1605,27 +1636,48 @@ function renderDocReviews(reviewsContainerId) {
     });
     if (!pending.length) panel.append(el("p", { class: "cell-muted" }, "Nothing awaiting review."));
     host.appendChild(panel);
-  } else {
-    host.append(el("p", {}, [el("b", {}, String(state.docTemplates.length)), " documents across every type"]));
-    Object.entries(byCategory).forEach(([category, docs]) => {
-      const panel = el("div", { class: "panel" }, [el("div", { class: "panel__head" }, el("h2", {}, `${category} (${docs.length})`))]);
-      docs.forEach((d) => {
-        panel.append(
-          el("div", { class: "person-row clickable", onclick: () => openDocDetail(d.id) }, [
-            el("div", {}, [
-              el("div", { class: "person-row__name" }, `${d.title} · ${d.code}`),
-              el("div", { class: "person-row__role" }, `Last published ${fmtDate(d.updated)}`),
-            ]),
-            el("div", { style: "display:flex;align-items:center;gap:8px;" }, [
-              d.pending ? el("span", { class: "badge badge-warning" }, "Edit in review") : null,
-              el("span", { class: "badge badge-neutral" }, d.liveVersion ? "v" + d.liveVersion + " live" : "Not yet published"),
-            ]),
-          ])
-        );
-      });
-      host.appendChild(panel);
-    });
+    return;
   }
+
+  // Library — the entire document set, browsable by category
+  const openCat = docLibraryCategoryState[reviewsContainerId];
+  if (!openCat) {
+    host.append(
+      el("p", {}, [el("b", {}, String(state.docTemplates.length)), ` documents across ${DOC_CATEGORIES.length} categories`]),
+      el("div", { class: "benefits-grid" }, DOC_CATEGORIES.map((cat) => {
+        const docs = byCategory[cat.key] || [];
+        return el("div", { class: "benefit-card clickable", onclick: () => { docLibraryCategoryState[reviewsContainerId] = cat.key; renderDocReviews(reviewsContainerId); } }, [
+          el("div", { class: "benefit-card__top" }, [el("h3", {}, cat.label), el("span", { class: "badge badge-navy" }, String(docs.length))]),
+          el("p", { class: "benefit-card__desc" }, cat.description),
+          el("div", { class: "benefit-card__meta" }, docs.length ? `${docs.filter((d) => d.liveVersion).length} published · ${docs.filter((d) => d.pending).length} in review` : "No documents yet"),
+        ]);
+      }))
+    );
+    return;
+  }
+
+  const cat = DOC_CATEGORIES.find((c) => c.key === openCat);
+  const docs = byCategory[openCat] || [];
+  host.append(
+    el("button", { class: "btn btn-sm btn-ghost", style: "margin-bottom:10px;", onclick: () => { docLibraryCategoryState[reviewsContainerId] = null; renderDocReviews(reviewsContainerId); } }, "← All categories"),
+    el("div", { class: "panel" }, [
+      el("div", { class: "panel__head" }, el("h2", {}, `${cat.label} (${docs.length})`)),
+      el("p", { class: "cell-muted", style: "margin-bottom:10px;" }, cat.description),
+      ...docs.map((d) =>
+        el("div", { class: "person-row clickable", onclick: () => openDocDetail(d.id) }, [
+          el("div", {}, [
+            el("div", { class: "person-row__name" }, `${d.title} · ${d.code}`),
+            el("div", { class: "person-row__role" }, `Applies to: ${d.appliesTo || "—"}`),
+          ]),
+          el("div", { style: "display:flex;align-items:center;gap:8px;" }, [
+            d.pending ? el("span", { class: "badge badge-warning" }, "Edit in review") : null,
+            el("span", { class: "badge badge-neutral" }, d.liveVersion ? "v" + d.liveVersion + " live" : "Not yet published"),
+          ]),
+        ])
+      ),
+      !docs.length ? el("p", { class: "cell-muted" }, "No documents in this category yet.") : null,
+    ])
+  );
 }
 
 // -------------------------------------------------------- document detail
@@ -1833,6 +1885,108 @@ function openDocTemplateForm(id) {
   );
 }
 
+// ------------------------------------------------------- pipeline stages
+function moveArrayItem(arr, idx, dir) {
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= arr.length) return;
+  const [item] = arr.splice(idx, 1);
+  arr.splice(newIdx, 0, item);
+}
+function renderStageList(containerId, stages) {
+  const wrap = byId(containerId);
+  wrap.innerHTML = "";
+  stages.forEach((s, idx) => {
+    const labelInput = el("input", { type: "text", value: s.label, style: "max-width:260px;" });
+    labelInput.addEventListener("change", () => {
+      if (!labelInput.value.trim()) { labelInput.value = s.label; return; }
+      s.label = labelInput.value.trim();
+      showToast("Stage renamed.", "success");
+    });
+    const row = el("div", { class: "workflow-row" }, [
+      el("div", { class: "workflow-row__top" }, [
+        labelInput,
+        el("div", { class: "campaign-row" }, [
+          el("button", { class: "btn btn-sm btn-ghost", ...(idx === 0 ? { disabled: "disabled" } : {}), onclick: () => { moveArrayItem(stages, idx, -1); renderStageList(containerId, stages); } }, "↑"),
+          el("button", { class: "btn btn-sm btn-ghost", ...(idx === stages.length - 1 ? { disabled: "disabled" } : {}), onclick: () => { moveArrayItem(stages, idx, 1); renderStageList(containerId, stages); } }, "↓"),
+          el("button", {
+            class: "btn btn-sm btn-ghost", onclick: () => {
+              if (stages.length <= 1) { showToast("At least one stage must remain.", "info"); return; }
+              if (!confirm(`Delete stage "${s.label}"?`)) return;
+              stages.splice(stages.indexOf(s), 1);
+              renderStageList(containerId, stages);
+              showToast("Stage deleted.", "info");
+            },
+          }, "Delete"),
+        ]),
+      ]),
+      el("div", { class: "workflow-row__meta" }, [el("span", {}, [el("b", {}, "id: "), s.id])]),
+    ]);
+    wrap.appendChild(row);
+  });
+}
+function addStage(stages, containerId, prefix) {
+  const label = prompt("New stage name:", "");
+  if (!label || !label.trim()) return;
+  stages.push({ id: prefix + "_" + Date.now().toString(36), label: label.trim() });
+  renderStageList(containerId, stages);
+  showToast("Stage added.", "success");
+}
+function renderPipelineStagesSettings() {
+  renderStageList("onboard-stages-list", state.onboardingStages);
+  renderStageList("renewal-stages-list", state.renewalStages);
+  byId("onboard-stage-add-btn").onclick = () => addStage(state.onboardingStages, "onboard-stages-list", "os");
+  byId("renewal-stage-add-btn").onclick = () => addStage(state.renewalStages, "renewal-stages-list", "rs");
+}
+
+// -------------------------------------------------------------- form fields
+function renderFieldList(containerId, fields) {
+  const wrap = byId(containerId);
+  wrap.innerHTML = "";
+  fields.forEach((f, idx) => {
+    const labelInput = el("input", { type: "text", value: f.label, style: "max-width:220px;" });
+    labelInput.addEventListener("change", () => { if (labelInput.value.trim()) { f.label = labelInput.value.trim(); showToast("Field updated.", "success"); } else labelInput.value = f.label; });
+    const typeSelect = el("select", {}, ["text", "select", "email", "phone", "textarea"].map((t) => el("option", { value: t, ...(f.type === t ? { selected: "selected" } : {}) }, t)));
+    typeSelect.addEventListener("change", () => { f.type = typeSelect.value; });
+    const requiredBox = el("input", { type: "checkbox", ...(f.required ? { checked: "checked" } : {}) });
+    requiredBox.addEventListener("change", () => { f.required = requiredBox.checked; });
+    const row = el("div", { class: "workflow-row" }, [
+      el("div", { class: "workflow-row__top" }, [
+        labelInput,
+        el("div", { class: "campaign-row" }, [
+          el("button", { class: "btn btn-sm btn-ghost", ...(idx === 0 ? { disabled: "disabled" } : {}), onclick: () => { moveArrayItem(fields, idx, -1); renderFieldList(containerId, fields); } }, "↑"),
+          el("button", { class: "btn btn-sm btn-ghost", ...(idx === fields.length - 1 ? { disabled: "disabled" } : {}), onclick: () => { moveArrayItem(fields, idx, 1); renderFieldList(containerId, fields); } }, "↓"),
+          el("button", {
+            class: "btn btn-sm btn-ghost", onclick: () => {
+              if (!confirm(`Delete field "${f.label}"?`)) return;
+              fields.splice(fields.indexOf(f), 1);
+              renderFieldList(containerId, fields);
+              showToast("Field deleted.", "info");
+            },
+          }, "Delete"),
+        ]),
+      ]),
+      el("div", { class: "workflow-row__meta" }, [
+        el("span", {}, [el("b", {}, "Type: "), typeSelect]),
+        el("label", {}, [requiredBox, " Required"]),
+      ]),
+    ]);
+    wrap.appendChild(row);
+  });
+}
+function addField(fields, containerId, prefix) {
+  const label = prompt("New field label:", "");
+  if (!label || !label.trim()) return;
+  fields.push({ id: prefix + "_" + Date.now().toString(36), label: label.trim(), type: "text", required: false });
+  renderFieldList(containerId, fields);
+  showToast("Field added.", "success");
+}
+function renderFormFieldsSettings() {
+  renderFieldList("enquiry-fields-list", state.enquiryFields);
+  renderFieldList("followup-fields-list", state.followupFields);
+  byId("enquiry-field-add-btn").onclick = () => addField(state.enquiryFields, "enquiry-fields-list", "f");
+  byId("followup-field-add-btn").onclick = () => addField(state.followupFields, "followup-fields-list", "g");
+}
+
 // -------------------------------------------------------------- handbook
 function renderHandbookPanel(targetId) {
   const panel = byId(targetId || "handbook-panel");
@@ -1912,6 +2066,12 @@ function renderUsersUsage() {
   );
   renderToolUsagePanel("usage-ai-assist", TOOL_USAGE.aiAssist);
   renderToolUsagePanel("usage-doc-generator", TOOL_USAGE.docGenerator);
+  renderFeedbackAnalysis();
+}
+function switchUsageTab(tab) {
+  document.querySelectorAll("#usage-tabs .doc-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.usagetab === tab));
+  byId("usage-tab-chat").classList.toggle("active", tab === "chat");
+  byId("usage-tab-docgen").classList.toggle("active", tab === "docgen");
 }
 function orgUsageBreakdown(totalProjects) {
   const weighted = ORGANIZATIONS.filter((o) => o.users > 0);
@@ -1994,7 +2154,7 @@ function renderOrganizations() {
   const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Organization", "Status", "Users", "Created"].map((h) => el("th", {}, h))))]);
   const tbody = el("tbody");
   ORGANIZATIONS.forEach((o) => {
-    tbody.appendChild(el("tr", {}, [
+    tbody.appendChild(el("tr", { class: "clickable", onclick: () => openOrgDetail(o.id) }, [
       el("td", { class: "cell-primary" }, o.name),
       el("td", {}, el("span", { class: "badge " + (o.status === "Active" ? "badge-success" : "badge-warning") }, o.status)),
       el("td", {}, String(o.users)),
@@ -2003,6 +2163,69 @@ function renderOrganizations() {
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
+}
+function companiesForOrgRegion(region) {
+  if (!region) return state.companies;
+  return state.companies.filter((c) => (c.address || "").includes(region));
+}
+function openOrgDetail(orgId) {
+  const o = ORGANIZATIONS.find((x) => x.id === orgId);
+  if (!o) return;
+  byId("org-detail-drawer").dataset.orgId = orgId;
+  byId("org-detail-title").textContent = o.name;
+  renderOrgDetailBody(o);
+  byId("org-detail-drawer").classList.add("open");
+  byId("org-detail-drawer-overlay").classList.add("open");
+}
+function closeOrgDetail() {
+  byId("org-detail-drawer").classList.remove("open");
+  byId("org-detail-drawer-overlay").classList.remove("open");
+}
+function renderOrgDetailBody(o) {
+  const body = byId("org-detail-body");
+  body.innerHTML = "";
+  const access = ORG_USER_ACCESS[o.id] || [];
+  body.appendChild(el("div", {}, [
+    el("div", { class: "drawer-kv" }, [
+      el("dt", {}, "Status"), el("dd", {}, el("span", { class: "badge " + (o.status === "Active" ? "badge-success" : "badge-warning") }, o.status)),
+      el("dt", {}, "Region"), el("dd", {}, o.region || "National"),
+      el("dt", {}, "Created"), el("dd", {}, fmtDate(o.createdDate)),
+      el("dt", {}, "Users with access"), el("dd", {}, String(o.users)),
+    ]),
+    el("div", { class: "panel", style: "margin-top:14px;" }, [
+      el("div", { class: "panel__head" }, [el("h2", {}, "User access")]),
+      el("p", { class: "cell-muted", style: "margin-bottom:10px;" }, "Who has access to this organization, and for what period."),
+      access.length
+        ? el("table", {}, [
+            el("thead", {}, el("tr", {}, ["User", "Access from", "Access to"].map((h) => el("th", {}, h)))),
+            el("tbody", {}, access.map((a) => el("tr", {}, [
+              el("td", { class: "cell-primary" }, a.user),
+              el("td", {}, fmtDate(a.accessFrom)),
+              el("td", {}, a.accessTo ? fmtDate(a.accessTo) : el("span", { class: "badge badge-success" }, "Ongoing")),
+            ]))),
+          ])
+        : el("p", { class: "cell-muted" }, "No users currently have access to this organization."),
+    ]),
+    state.appMode === "crm"
+      ? el("div", { class: "panel", style: "margin-top:14px;" }, [
+          el("div", { class: "panel__head" }, [el("h2", {}, "Linked member companies")]),
+          el("p", { class: "cell-muted", style: "margin-bottom:10px;" }, o.region ? `Member companies based in ${o.region}.` : "All member companies (national)."),
+          (() => {
+            const companies = companiesForOrgRegion(o.region);
+            return companies.length
+              ? el("table", {}, [
+                  el("thead", {}, el("tr", {}, ["Company", "Category", "Status"].map((h) => el("th", {}, h)))),
+                  el("tbody", {}, companies.map((c) => el("tr", { class: "clickable", onclick: () => { closeOrgDetail(); openDrawer(c.id); } }, [
+                    el("td", { class: "cell-primary" }, c.name),
+                    el("td", {}, c.category),
+                    el("td", {}, el("span", { class: "badge " + getCompanyStatusBadgeClass(c) }, getCompanyStatusLabel(c))),
+                  ]))),
+                ])
+              : el("p", { class: "cell-muted" }, "No member companies linked to this region.");
+          })(),
+        ])
+      : null,
+  ]));
 }
 function openOrgForm() {
   const panel = byId("org-form-panel");
@@ -2216,9 +2439,10 @@ function companyWorkflowStatus(c, step) {
   if (!step.active) return "paused";
   const cat = companyWorkflowCategory(c);
   if (cat === "onboarding") {
-    const gateIdx = ONBOARD_ORDER.indexOf(step.stageGate);
+    const order = getOnboardOrder();
+    const gateIdx = order.indexOf(step.stageGate);
     if (gateIdx === -1) return "upcoming";
-    const curIdx = ONBOARD_ORDER.indexOf(c.onboardingStage);
+    const curIdx = order.indexOf(c.onboardingStage);
     if (gateIdx < curIdx) return "sent";
     if (gateIdx === curIdx) return "next";
     return "upcoming";
@@ -2349,11 +2573,10 @@ function toggleSettingsPopover(e) { e.stopPropagation(); byId("settings-popover"
 function setAppMode(mode) {
   state.appMode = mode;
   document.querySelectorAll(".mode-toggle__btn").forEach((b) => b.classList.toggle("active", b.dataset.appmode === mode));
-  document.querySelectorAll(".sidebar__nav .nav-btn").forEach((b) => {
+  document.querySelectorAll(".sidebar__nav .nav-btn, .sidebar__nav .nav-group-label").forEach((b) => {
     const m = b.dataset.mode;
     b.style.display = (m === "both" || m === mode) ? "" : "none";
   });
-  byId("settings-wrap").style.display = mode === "crm" ? "" : "none";
   showView(mode === "crm" ? "action" : "organizations");
 }
 
@@ -2372,6 +2595,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (b1) { const section = b1.closest(".subtabs").dataset.section; switchSubtab(section, b1.dataset.subtab); }
     const b2 = e.target.closest(".subtab-btn2");
     if (b2) switchSubtab("renewal", b2.dataset.subtab2);
+    const b3 = e.target.closest("[data-usagetab]");
+    if (b3) switchUsageTab(b3.dataset.usagetab);
   });
   byId("settings-gear").addEventListener("click", toggleSettingsPopover);
   document.addEventListener("click", closeSettingsPopover);
@@ -2381,5 +2606,7 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("campaign-drawer-overlay").addEventListener("click", closeCampaignDrawer);
   byId("doc-detail-close").addEventListener("click", closeDocDetail);
   byId("doc-detail-drawer-overlay").addEventListener("click", closeDocDetail);
+  byId("org-detail-close").addEventListener("click", closeOrgDetail);
+  byId("org-detail-drawer-overlay").addEventListener("click", closeOrgDetail);
   setAppMode("crm");
 });
