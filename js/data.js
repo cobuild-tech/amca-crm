@@ -650,30 +650,48 @@ const HANDBOOK = {
 };
 
 // ---------------------------------------------------------------------------
-// Document Generator — a Safe Work Method Statement (SWMS) library, not a
-// membership-document tool. Templates are managed from Settings; this view
-// is purely the review → publish workflow for edits submitted against them.
+// Document Generator — a Safe Work Method Statement (SWMS) repository, not a
+// membership-document tool. Settings → Document Templates manages the base
+// entry for each document; this view is the review → publish → version
+// history workflow for edits made against it. Each document carries its own
+// history (submitted / published / rejected / restored events) and an
+// optional `pending` submission awaiting a decision.
 // ---------------------------------------------------------------------------
 const DOC_TEMPLATES = [
-  { id: "d1", name: "HVAC Equipment Installation SWMS", appliesTo: "Installation crews", body: "Scope: lifting, positioning and commissioning of HVAC plant. Hazards: manual handling, working at height, electrical isolation. Controls: two-person lift, isolation permit, PPE per AS/NZS 4576.", active: true, updated: "2026-06-01" },
-  { id: "d2", name: "Confined Space Entry SWMS", appliesTo: "Confined space work", body: "Scope: entry into plant rooms and ductwork for inspection or repair. Hazards: atmospheric, entrapment. Controls: entry permit, gas testing, standby person, rescue plan per AS 2865.", active: true, updated: "2026-05-12" },
-  { id: "d3", name: "Refrigerant Handling SWMS", appliesTo: "Licensed technicians", body: "Scope: recovery, charging and disposal of refrigerant. Hazards: chemical exposure, pressure release. Controls: ARC licence verification, recovery equipment, F-Gas handling procedure.", active: true, updated: "2026-07-30" },
-  { id: "d4", name: "Working at Heights SWMS", appliesTo: "Roof and plant room work", body: "Scope: roof-mounted plant access and maintenance. Hazards: falls, weather exposure. Controls: harness and anchor point inspection, exclusion zone, weather hold criteria.", active: false, updated: "2026-04-22" },
+  {
+    id: "d1", code: "SWMS-001", title: "HVAC Equipment Installation SWMS", category: "SWMS", appliesTo: "Installation crews",
+    overview: "Scope: lifting, positioning and commissioning of HVAC plant. Hazards: manual handling, working at height, electrical isolation. Controls: two-person lift, isolation permit, PPE per AS/NZS 4576.",
+    active: true, updated: "2026-08-17", liveVersion: 3,
+    pending: { editedBy: "John Castillo", submitted: "2026-08-31", note: "Updated isolation permit wording after audit feedback." },
+    history: [
+      { type: "published", actor: "Ben Fogerty", date: "2026-08-17", version: 3 },
+      { type: "submitted", actor: "Ben Fogerty", date: "2026-08-17", note: "" },
+      { type: "published", actor: "Ben Hawkins", date: "2026-08-12", version: 2 },
+      { type: "submitted", actor: "Ben Fogerty", date: "2026-08-11", note: "" },
+      { type: "published", actor: "Ben Fogerty", date: "2026-06-01", version: 1 },
+    ],
+  },
+  {
+    id: "d2", code: "SWMS-002", title: "Confined Space Entry SWMS", category: "SWMS", appliesTo: "Confined space work",
+    overview: "Scope: entry into plant rooms and ductwork for inspection or repair. Hazards: atmospheric, entrapment. Controls: entry permit, gas testing, standby person, rescue plan per AS 2865.",
+    active: true, updated: "2026-08-05", liveVersion: 1, pending: null,
+    history: [
+      { type: "published", actor: "Ben Fogerty", date: "2026-08-05", version: 1 },
+      { type: "submitted", actor: "John Castillo", date: "2026-08-04", note: "" },
+    ],
+  },
+  {
+    id: "d3", code: "SWMS-003", title: "Refrigerant Handling SWMS", category: "SWMS", appliesTo: "Licensed technicians",
+    overview: "Scope: recovery, charging and disposal of refrigerant. Hazards: chemical exposure, pressure release. Controls: ARC licence verification, recovery equipment, F-Gas handling procedure.",
+    active: true, updated: "2026-07-30", liveVersion: 1, pending: null,
+    history: [{ type: "published", actor: "Ben Fogerty", date: "2026-07-30", version: 1 }],
+  },
+  {
+    id: "d4", code: "SWMS-004", title: "Working at Heights SWMS", category: "SWMS", appliesTo: "Roof and plant room work",
+    overview: "Scope: roof-mounted plant access and maintenance. Hazards: falls, weather exposure. Controls: harness and anchor point inspection, exclusion zone, weather hold criteria.",
+    active: false, updated: "2026-04-22", liveVersion: 0, pending: null, history: [],
+  },
 ];
-
-// Document Management workflow: an edited SWMS sits "Awaiting review" until
-// an approver publishes it; each publish bumps the version.
-const DOC_REVIEWS_SEED = {
-  awaiting: [
-    { id: "dr1", category: "SWMS", title: "Refrigerant Handling — SWMS-004", editedBy: "John Castillo", submitted: "2026-08-31" },
-  ],
-  published: [
-    { id: "dp1", category: "SWMS", title: "HVAC Equipment Installation — SWMS-001", editedBy: "John Castillo", approvedBy: "Ben Fogerty", when: "2026-08-31", version: 4 },
-    { id: "dp2", category: "SWMS", title: "HVAC Equipment Installation — SWMS-001", editedBy: "Ben Fogerty", approvedBy: "Ben Fogerty", when: "2026-08-17", version: 3 },
-    { id: "dp3", category: "SWMS", title: "HVAC Equipment Installation — SWMS-001", editedBy: "Ben Fogerty", approvedBy: "Ben Hawkins", when: "2026-08-12", version: 2 },
-    { id: "dp4", category: "SWMS", title: "Confined Space Entry — SWMS-002", editedBy: "John Castillo", approvedBy: "Ben Fogerty", when: "2026-08-05", version: 1 },
-  ],
-};
 
 // ---------------------------------------------------------------------------
 // Feedback Analysis — usage/quality analytics for the AI-assisted tools

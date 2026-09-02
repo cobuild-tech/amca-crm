@@ -28,7 +28,6 @@ const state = {
   trainingsMoodleSynced: false,
   trainingsVetTrakSynced: false,
   docTemplates: JSON.parse(JSON.stringify(DOC_TEMPLATES)),
-  docReviews: JSON.parse(JSON.stringify(DOC_REVIEWS_SEED)),
   feedbackRange: "30 days",
   view: "action",
   appMode: "crm",
@@ -1568,73 +1567,204 @@ function renderCmsPanel(key) {
 }
 
 // -------------------------------------------------------------- document gen
-const docReviewTabState = {};
+const docRepoTabState = {};
 function renderDocReviews(reviewsContainerId) {
   const host = byId(reviewsContainerId);
   if (!host) return;
-  if (!docReviewTabState[reviewsContainerId]) docReviewTabState[reviewsContainerId] = "awaiting";
-  const activeTab = docReviewTabState[reviewsContainerId];
+  if (!docRepoTabState[reviewsContainerId]) docRepoTabState[reviewsContainerId] = "awaiting";
+  const activeTab = docRepoTabState[reviewsContainerId];
   host.innerHTML = "";
 
+  const pending = state.docTemplates.filter((d) => d.pending);
   const tabs = el("div", { class: "subtabs subtabs--nested" }, [
-    el("button", { class: "doc-tab-btn " + (activeTab === "awaiting" ? "active" : ""), onclick: () => { docReviewTabState[reviewsContainerId] = "awaiting"; renderDocReviews(reviewsContainerId); } }, `Awaiting review (${state.docReviews.awaiting.length})`),
-    el("button", { class: "doc-tab-btn " + (activeTab === "published" ? "active" : ""), onclick: () => { docReviewTabState[reviewsContainerId] = "published"; renderDocReviews(reviewsContainerId); } }, "Published"),
+    el("button", { class: "doc-tab-btn " + (activeTab === "awaiting" ? "active" : ""), onclick: () => { docRepoTabState[reviewsContainerId] = "awaiting"; renderDocReviews(reviewsContainerId); } }, `Awaiting review (${pending.length})`),
+    el("button", { class: "doc-tab-btn " + (activeTab === "repo" ? "active" : ""), onclick: () => { docRepoTabState[reviewsContainerId] = "repo"; renderDocReviews(reviewsContainerId); } }, "Repository"),
   ]);
   host.appendChild(tabs);
 
+  const byCategory = {};
+  state.docTemplates.forEach((d) => { (byCategory[d.category] = byCategory[d.category] || []).push(d); });
+
   if (activeTab === "awaiting") {
-    const byCategory = {};
-    state.docReviews.awaiting.forEach((r) => { (byCategory[r.category] = byCategory[r.category] || []).push(r); });
     const panel = el("div", { class: "panel" });
-    Object.entries(byCategory).forEach(([category, rows]) => {
-      panel.append(el("div", { class: "workflow-row__meta", style: "margin:4px 0 6px;" }, `${category} (${rows.length})`));
-      rows.forEach((r) => {
+    Object.entries(byCategory).forEach(([category, docs]) => {
+      const docsPending = docs.filter((d) => d.pending);
+      if (!docsPending.length) return;
+      panel.append(el("div", { class: "workflow-row__meta", style: "margin:4px 0 6px;" }, `${category} (${docsPending.length})`));
+      docsPending.forEach((d) => {
         panel.append(
-          el("div", { class: "person-row" }, [
+          el("div", { class: "person-row clickable", onclick: () => openDocDetail(d.id) }, [
             el("div", {}, [
-              el("div", { class: "person-row__name" }, r.title),
-              el("div", { class: "person-row__role" }, `${r.editedBy} · ${fmtDate(r.submitted)}`),
+              el("div", { class: "person-row__name" }, `${d.title} · ${d.code}`),
+              el("div", { class: "person-row__role" }, `${d.pending.editedBy} · ${fmtDate(d.pending.submitted)}`),
             ]),
-            el("div", { style: "display:flex;align-items:center;gap:8px;" }, [
-              el("span", { class: "badge badge-warning" }, "In review"),
-              el("button", { class: "btn btn-sm btn-primary", onclick: () => approveDocReview(r.id, reviewsContainerId) }, "Approve & publish"),
-            ]),
+            el("span", { class: "badge badge-warning" }, "In review"),
           ])
         );
       });
     });
-    if (!state.docReviews.awaiting.length) panel.append(el("p", { class: "cell-muted" }, "Nothing awaiting review."));
+    if (!pending.length) panel.append(el("p", { class: "cell-muted" }, "Nothing awaiting review."));
     host.appendChild(panel);
   } else {
-    const total = state.docReviews.published.length;
-    const byCategoryCount = {};
-    state.docReviews.published.forEach((p) => { byCategoryCount[p.category] = (byCategoryCount[p.category] || 0) + 1; });
-    host.append(el("p", {}, [el("b", {}, String(total)), " published across every document type"]));
-    const panel = el("div", { class: "panel" }, [el("div", { class: "panel__head" }, el("h2", {}, "Recent activity"))]);
-    [...state.docReviews.published].sort((a, b) => (a.when < b.when ? 1 : -1)).forEach((p) => {
-      panel.append(
-        el("div", { class: "person-row" }, [
-          el("div", {}, [
-            el("div", { class: "person-row__name" }, p.title),
-            el("div", { class: "person-row__role" }, `Edited by ${p.editedBy} · Approved by ${p.approvedBy} · ${fmtDate(p.when)}`),
-          ]),
-          el("span", { class: "badge badge-neutral" }, "v" + p.version),
-        ])
-      );
+    host.append(el("p", {}, [el("b", {}, String(state.docTemplates.length)), " documents across every type"]));
+    Object.entries(byCategory).forEach(([category, docs]) => {
+      const panel = el("div", { class: "panel" }, [el("div", { class: "panel__head" }, el("h2", {}, `${category} (${docs.length})`))]);
+      docs.forEach((d) => {
+        panel.append(
+          el("div", { class: "person-row clickable", onclick: () => openDocDetail(d.id) }, [
+            el("div", {}, [
+              el("div", { class: "person-row__name" }, `${d.title} · ${d.code}`),
+              el("div", { class: "person-row__role" }, `Last published ${fmtDate(d.updated)}`),
+            ]),
+            el("div", { style: "display:flex;align-items:center;gap:8px;" }, [
+              d.pending ? el("span", { class: "badge badge-warning" }, "Edit in review") : null,
+              el("span", { class: "badge badge-neutral" }, d.liveVersion ? "v" + d.liveVersion + " live" : "Not yet published"),
+            ]),
+          ])
+        );
+      });
+      host.appendChild(panel);
     });
-    host.appendChild(panel);
   }
 }
-function approveDocReview(reviewId, reviewsContainerId) {
-  const idx = state.docReviews.awaiting.findIndex((r) => r.id === reviewId);
-  if (idx === -1) return;
-  const r = state.docReviews.awaiting[idx];
-  const priorVersions = state.docReviews.published.filter((p) => p.title === r.title).length;
-  state.docReviews.awaiting.splice(idx, 1);
-  state.docReviews.published.push({ id: genId("dp"), category: r.category, title: r.title, editedBy: r.editedBy, approvedBy: state.currentUser, when: TODAY, version: priorVersions + 1 });
-  showToast(`"${r.title}" approved and published (v${priorVersions + 1}).`, "success");
-  docReviewTabState[reviewsContainerId] = "published";
-  renderDocReviews(reviewsContainerId);
+
+// -------------------------------------------------------- document detail
+function openDocDetail(docId) {
+  const d = state.docTemplates.find((x) => x.id === docId);
+  if (!d) return;
+  byId("doc-detail-drawer").dataset.docId = docId;
+  byId("doc-detail-title").textContent = `${d.title} · ${d.code}`;
+  renderDocDetailBody(d);
+  byId("doc-detail-drawer").classList.add("open");
+  byId("doc-detail-drawer-overlay").classList.add("open");
+}
+function closeDocDetail() {
+  byId("doc-detail-drawer").classList.remove("open");
+  byId("doc-detail-drawer-overlay").classList.remove("open");
+}
+function refreshDocDetailIfOpen() {
+  const id = byId("doc-detail-drawer").dataset.docId;
+  if (id && byId("doc-detail-drawer").classList.contains("open")) {
+    const d = state.docTemplates.find((x) => x.id === id);
+    if (d) renderDocDetailBody(d);
+  }
+}
+function renderDocDetailBody(d) {
+  const body = byId("doc-detail-body");
+  body.innerHTML = "";
+
+  body.append(
+    el("div", { class: "drawer-section" }, [
+      el("span", { class: "badge badge-navy" }, d.category),
+      " ",
+      el("span", { class: "badge " + (d.liveVersion ? "badge-success" : "badge-neutral") }, d.liveVersion ? "v" + d.liveVersion + " live" : "Not yet published"),
+    ])
+  );
+
+  if (d.pending) {
+    body.append(
+      el("div", { class: "drawer-section" }, [
+        el("h3", {}, "Pending submission"),
+        el("div", { class: "campaign-summary", style: "margin-bottom:10px;" }, [
+          el("b", {}, "Submission note: "), d.pending.note || "(none)",
+        ]),
+        el("div", { class: "cell-muted", style: "margin-bottom:10px;" }, `Submitted by ${d.pending.editedBy} · ${fmtDate(d.pending.submitted)}`),
+        el("div", { class: "campaign-row" }, [
+          el("button", { class: "btn btn-sm", onclick: () => requestDocChanges(d.id) }, "Request changes"),
+          el("button", { class: "btn btn-sm", style: "border-color:var(--danger);color:var(--danger);", onclick: () => rejectDocEdit(d.id) }, "Reject edit"),
+          el("button", { class: "btn btn-sm btn-primary", onclick: () => approveDocReview(d.id) }, "Approve & publish"),
+        ]),
+      ])
+    );
+  }
+
+  body.append(
+    el("div", { class: "drawer-section" }, [
+      el("h3", {}, "Overview"),
+      el("p", {}, d.overview),
+    ])
+  );
+
+  const historyEntries = [...d.history].reverse();
+  const typeMeta = {
+    submitted: { label: "Submitted for review", cls: "badge-navy" },
+    published: { label: "Published", cls: "badge-success" },
+    rejected: { label: "Rejected", cls: "badge-danger" },
+    changes_requested: { label: "Changes requested", cls: "badge-warning" },
+    restored: { label: "Restored from a past version", cls: "badge-neutral" },
+  };
+  body.append(
+    el("div", { class: "drawer-section" }, [
+      el("h3", {}, "Edit history"),
+      el("div", { class: "activity-list" }, historyEntries.length ? historyEntries.map((h) => {
+        const meta = typeMeta[h.type] || { label: h.type, cls: "badge-neutral" };
+        const isLive = h.type === "published" && h.version === d.liveVersion;
+        return el("div", { class: "activity-item", style: "grid-template-columns:90px 1fr auto;align-items:start;gap:10px;" }, [
+          el("div", { class: "activity-item__date" }, fmtDate(h.date)),
+          el("div", {}, [
+            el("div", {}, [
+              el("span", { class: "badge " + meta.cls, style: "margin-right:6px;" }, meta.label),
+              h.version != null ? el("span", { class: "badge " + (isLive ? "badge-success" : "badge-neutral") }, "v" + h.version + (isLive ? " LIVE" : "")) : null,
+            ]),
+            el("div", { class: "cell-muted" }, h.actor),
+            h.note ? el("div", { style: "font-style:italic;font-size:12.5px;margin-top:2px;" }, `“${h.note}”`) : null,
+          ]),
+          h.type === "published" && !isLive
+            ? el("button", { class: "btn btn-sm", onclick: () => restoreDocVersion(d.id, h.version) }, "Restore")
+            : null,
+        ]);
+      }) : [el("p", { class: "cell-muted" }, "No history yet.")]),
+    ])
+  );
+}
+function approveDocReview(docId) {
+  const d = state.docTemplates.find((x) => x.id === docId);
+  if (!d || !d.pending) return;
+  const nextVersion = d.liveVersion + 1;
+  d.history.push({ type: "submitted", actor: d.pending.editedBy, date: d.pending.submitted, note: d.pending.note });
+  d.history.push({ type: "published", actor: state.currentUser, date: TODAY, version: nextVersion });
+  d.liveVersion = nextVersion;
+  d.updated = TODAY;
+  d.pending = null;
+  showToast(`"${d.title}" approved and published (v${nextVersion}).`, "success");
+  refreshDocDetailIfOpen();
+  renderAllDocGenViews();
+}
+function rejectDocEdit(docId) {
+  const d = state.docTemplates.find((x) => x.id === docId);
+  if (!d || !d.pending) return;
+  const reason = prompt(`Reason for rejecting this edit to "${d.title}"?`, "");
+  if (reason === null) return;
+  d.history.push({ type: "submitted", actor: d.pending.editedBy, date: d.pending.submitted, note: d.pending.note });
+  d.history.push({ type: "rejected", actor: state.currentUser, date: TODAY, note: reason });
+  d.pending = null;
+  showToast(`Edit to "${d.title}" rejected.`, "info");
+  refreshDocDetailIfOpen();
+  renderAllDocGenViews();
+}
+function requestDocChanges(docId) {
+  const d = state.docTemplates.find((x) => x.id === docId);
+  if (!d || !d.pending) return;
+  const note = prompt(`What changes are needed for "${d.title}"?`, "");
+  if (note === null) return;
+  d.history.push({ type: "changes_requested", actor: state.currentUser, date: TODAY, note });
+  showToast(`Changes requested for "${d.title}".`, "info");
+  refreshDocDetailIfOpen();
+  renderAllDocGenViews();
+}
+function restoreDocVersion(docId, version) {
+  const d = state.docTemplates.find((x) => x.id === docId);
+  if (!d) return;
+  if (!confirm(`Restore "${d.title}" to v${version}? This becomes the new live version.`)) return;
+  d.history.push({ type: "restored", actor: state.currentUser, date: TODAY, version, note: `Restored to v${version}` });
+  d.liveVersion = version;
+  d.updated = TODAY;
+  showToast(`"${d.title}" restored to v${version}.`, "success");
+  refreshDocDetailIfOpen();
+  renderAllDocGenViews();
+}
+function renderAllDocGenViews() {
+  ["docgen-reviews", "pdocgen-reviews"].forEach((id) => { if (byId(id)) renderDocReviews(id); });
 }
 function renderDocGen(ids) {
   const idOf = ids || { reviews: "docgen-reviews" };
@@ -1650,17 +1780,17 @@ function renderDocTemplatesSettings() {
   state.docTemplates.forEach((t) => {
     const row = el("div", { class: "workflow-row" });
     const top = el("div", { class: "workflow-row__top" }, [
-      el("div", { class: "workflow-row__name" }, t.name),
+      el("div", { class: "workflow-row__name" }, `${t.title} · ${t.code}`),
       el("button", { class: "btn btn-sm " + (t.active ? "" : "btn-ghost"), onclick: () => { t.active = !t.active; renderDocTemplatesSettings(); } }, t.active ? "Active" : "Paused"),
     ]);
-    const meta = el("div", { class: "workflow-row__meta" }, [el("span", {}, [el("b", {}, "Applies to: "), t.appliesTo]), el("span", {}, [el("b", {}, "Updated: "), fmtDate(t.updated)])]);
-    const bodyLine = el("div", { class: "workflow-row__subject" }, t.body);
+    const meta = el("div", { class: "workflow-row__meta" }, [el("span", {}, [el("b", {}, "Category: "), t.category]), el("span", {}, [el("b", {}, "Applies to: "), t.appliesTo]), el("span", {}, [el("b", {}, "Updated: "), fmtDate(t.updated)])]);
+    const bodyLine = el("div", { class: "workflow-row__subject" }, t.overview);
     const actions = el("div", { class: "campaign-row" }, [
       el("button", { class: "btn btn-sm btn-ghost", onclick: () => openDocTemplateForm(t.id) }, "Edit"),
       el("button", { class: "btn btn-sm btn-ghost", onclick: () => {
-        if (!confirm(`Delete "${t.name}"? This can't be undone.`)) return;
+        if (!confirm(`Delete "${t.title}"? This can't be undone.`)) return;
         state.docTemplates = state.docTemplates.filter((x) => x.id !== t.id);
-        showToast(`"${t.name}" deleted.`, "info");
+        showToast(`"${t.title}" deleted.`, "info");
         renderDocTemplatesSettings();
       } }, "Delete"),
     ]);
@@ -1669,28 +1799,33 @@ function renderDocTemplatesSettings() {
   });
 }
 function openDocTemplateForm(id) {
-  const t = id ? state.docTemplates.find((x) => x.id === id) : { name: "", appliesTo: "", body: "", active: true };
+  const t = id ? state.docTemplates.find((x) => x.id === id) : { title: "", code: "", category: "SWMS", appliesTo: "", overview: "", active: true };
   const panel = byId("doctemplate-form-panel");
   panel.style.display = "block";
   panel.innerHTML = "";
-  const nameInput = el("input", { type: "text", value: t.name, placeholder: "Template name" });
+  const titleInput = el("input", { type: "text", value: t.title, placeholder: "Document title" });
+  const codeInput = el("input", { type: "text", value: t.code, placeholder: "Document code, e.g. SWMS-005" });
+  const categoryInput = el("input", { type: "text", value: t.category, placeholder: "Category, e.g. SWMS" });
   const appliesInput = el("input", { type: "text", value: t.appliesTo, placeholder: "Applies to" });
-  const bodyInput = el("textarea", { rows: "4", placeholder: "Template body / checklist" }, t.body);
+  const overviewInput = el("textarea", { rows: "4", placeholder: "Overview / scope" }, t.overview);
   panel.append(
     el("h3", {}, id ? "Edit template" : "Add template"),
-    el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Title"), titleInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Code"), codeInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Category"), categoryInput]),
     el("div", { class: "form-row" }, [el("label", {}, "Applies to"), appliesInput]),
-    el("div", { class: "form-row" }, [el("label", {}, "Body"), bodyInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Overview"), overviewInput]),
     el("div", { class: "campaign-row" }, [
       el("button", {
         class: "btn btn-primary", onclick: () => {
-          if (!nameInput.value.trim()) { showToast("Template name is required.", "info"); return; }
-          const payload = { name: nameInput.value.trim(), appliesTo: appliesInput.value.trim(), body: bodyInput.value.trim(), updated: TODAY };
+          if (!titleInput.value.trim()) { showToast("Title is required.", "info"); return; }
+          const payload = { title: titleInput.value.trim(), code: codeInput.value.trim(), category: categoryInput.value.trim() || "General", appliesTo: appliesInput.value.trim(), overview: overviewInput.value.trim(), updated: TODAY };
           if (id) Object.assign(t, payload);
-          else state.docTemplates.push({ id: genId("d"), active: true, ...payload });
+          else state.docTemplates.push({ id: genId("d"), active: true, liveVersion: 0, pending: null, history: [], ...payload });
           panel.style.display = "none";
           showToast(id ? "Template updated." : "Template added.", "success");
           renderDocTemplatesSettings();
+          renderAllDocGenViews();
         },
       }, "Save"),
       el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
@@ -2244,5 +2379,7 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("drawer-overlay").addEventListener("click", closeDrawer);
   byId("campaign-drawer-close").addEventListener("click", closeCampaignDrawer);
   byId("campaign-drawer-overlay").addEventListener("click", closeCampaignDrawer);
+  byId("doc-detail-close").addEventListener("click", closeDocDetail);
+  byId("doc-detail-drawer-overlay").addEventListener("click", closeDocDetail);
   setAppMode("crm");
 });

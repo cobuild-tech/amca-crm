@@ -236,6 +236,8 @@ select, input { font-family: inherit; font-size: 14px; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr.clickable { cursor: pointer; }
 .data-table tr.clickable:hover { background: var(--amca-navy-light); }
+.person-row.clickable { cursor: pointer; }
+.person-row.clickable:hover { background: var(--amca-navy-light); }
 .cell-primary { font-weight: 700; }
 .cell-muted { color: var(--text-muted); font-size: 12.5px; }
 .row-actions { display: flex; gap: 6px; }
