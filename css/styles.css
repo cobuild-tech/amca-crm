@@ -51,6 +51,8 @@ html, body {
   font-family: var(--font);
   font-size: 15px;
   line-height: 1.5;
+  overflow-x: hidden;
+  width: 100%;
 }
 
 h1, h2, h3 { margin: 0 0 4px; font-weight: 700; letter-spacing: -0.01em; }
@@ -122,7 +124,7 @@ select, input { font-family: inherit; font-size: 14px; }
 .sidebar__user strong { font-size: 13px; }
 
 /* -------------------------------------------------------------------- main */
-#app { flex: 1; min-width: 0; max-width: 1160px; padding: 24px 28px 64px; }
+#app { flex: 1 1 0%; min-width: 0; width: 100%; max-width: 1160px; margin: 0 auto; box-sizing: border-box; padding: 24px 28px 64px; overflow-x: hidden; }
 .view { display: none; animation: fadeIn 0.18s ease; }
 .view.active { display: block; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
@@ -257,8 +259,10 @@ select, input { font-family: inherit; font-size: 14px; }
 /* -------------------------------------------------------------- pipeline */
 .pipeline-board {
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); align-items: start;
-  gap: 12px; overflow-x: auto; padding-bottom: 12px;
+  gap: 12px; overflow-x: auto; padding-bottom: 12px; max-width: 100%;
   scrollbar-width: none; -ms-overflow-style: none;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), rgba(0,0,0,0.15) 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 28px), rgba(0,0,0,0.15) 100%);
 }
 .pipeline-board::-webkit-scrollbar { display: none; }
 .pipeline-col { background: var(--pipeline-col-bg); border-radius: var(--radius); padding: 10px; min-height: 64px; display: flex; flex-direction: column; gap: 10px; }
