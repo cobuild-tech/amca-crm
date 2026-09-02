@@ -51,6 +51,7 @@
         <button class="gear-btn" id="settings-gear" aria-label="Settings" title="Settings">⚙</button>
         <div class="settings-popover" id="settings-popover">
           <button data-view="automation">Automation Settings</button>
+          <button data-view="doctemplates">Document Templates</button>
           <button data-view="integrations">Integrations</button>
           <button data-view="users">User Management</button>
         </div>
@@ -188,17 +189,8 @@
       </div>
 
       <div id="members-documents" class="subtab-panel">
-        <p>Review and publish edits submitted for member documents.</p>
+        <p>Review and publish edits submitted against the SWMS library. Templates are managed in Settings.</p>
         <div id="docgen-reviews"></div>
-        <div class="panel">
-          <div class="panel__head"><h2>Templates</h2></div>
-          <div id="docgen-templates" class="workflow-list"></div>
-        </div>
-        <div class="panel">
-          <div class="panel__head"><h2>Generate a document</h2></div>
-          <div id="docgen-form" class="campaign-builder"></div>
-          <div id="docgen-preview" class="doc-preview" style="display:none;"></div>
-        </div>
       </div>
 
       <div id="members-handbook" class="subtab-panel">
@@ -213,9 +205,9 @@
         <p>Every past enquiry, lapsed member and event/training-only contact — plus consent-aware campaigns to reach them.</p>
       </div>
       <div class="subtabs" data-section="nonmembers">
+        <button class="subtab-btn" data-subtab="nonmembers-campaigns">Campaigns</button>
         <button class="subtab-btn" data-subtab="nonmembers-contacts">Contacts</button>
         <button class="subtab-btn" data-subtab="nonmembers-lists">Lists</button>
-        <button class="subtab-btn" data-subtab="nonmembers-campaigns">Campaigns</button>
       </div>
 
       <div id="nonmembers-contacts" class="subtab-panel">
@@ -241,18 +233,29 @@
       </div>
 
       <div id="nonmembers-campaigns" class="subtab-panel">
-        <p class="subtab-intro">Sends only go to contacts who've given marketing consent and haven't unsubscribed.</p>
+        <div class="toolbar">
+          <p class="subtab-intro" style="margin:0;">Sends only go to contacts who've given marketing consent and haven't unsubscribed.</p>
+          <button class="btn btn-primary" id="nonmember-campaign-new-btn" style="margin-left:auto;">+ New Campaign</button>
+        </div>
         <div id="nonmember-campaign-summary" class="stat-grid"></div>
         <div class="panel">
-          <div class="panel__head"><h2>New campaign</h2></div>
-          <div id="nonmember-campaign-builder" class="campaign-builder"></div>
-        </div>
-        <div class="panel">
-          <div class="panel__head"><h2>Campaign history</h2></div>
+          <div class="panel__head"><h2>Campaign history &amp; analytics</h2></div>
           <div id="nonmember-campaigns-table" class="data-table"></div>
         </div>
       </div>
     </section>
+
+    <!-- Non-member campaign composer (side panel) -->
+    <div id="campaign-drawer-overlay" class="drawer-overlay"></div>
+    <aside id="campaign-drawer" class="drawer">
+      <div class="drawer__head">
+        <h2>New Campaign</h2>
+        <button id="campaign-drawer-close" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="drawer__body">
+        <div id="nonmember-campaign-builder" class="campaign-builder"></div>
+      </div>
+    </aside>
 
     <!-- NEWSLETTER (Send / History / Subscribers / Unsubscribe Page) -->
     <section class="view" id="view-newsletter" data-view="newsletter">
@@ -315,11 +318,12 @@
     <section class="view" id="view-training" data-view="training">
       <div class="view-head">
         <h1>Training &amp; Certification</h1>
-        <p>Courses and certifications, including the non-member career-pathway intakes that feed the pipeline. Normally synced from CEvent; can also be created here for flexibility.</p>
+        <p>Courses and certifications, including the non-member career-pathway intakes that feed the pipeline. Synced from Moodle (e-learning) and VetTrak (RTO enrolments) separately; can also be created here for flexibility.</p>
       </div>
       <div class="toolbar">
         <span class="cell-muted" id="training-sync-status"></span>
-        <button class="btn" id="training-sync-btn" style="margin-left:auto;">Sync now (CEvent)</button>
+        <button class="btn" id="training-sync-moodle-btn" style="margin-left:auto;">Sync now (Moodle)</button>
+        <button class="btn" id="training-sync-vettrak-btn">Sync now (VetTrak)</button>
         <button class="btn btn-primary" id="training-add-btn">+ Add training</button>
       </div>
       <div id="training-form-panel" class="panel" style="display:none;"></div>
@@ -354,6 +358,20 @@
         <div class="panel__head"><h2>Offboarding</h2></div>
         <div id="workflow-offboarding" class="workflow-list"></div>
       </div>
+    </section>
+
+    <!-- DOCUMENT TEMPLATES (via gear) -->
+    <section class="view" id="view-doctemplates" data-view="doctemplates">
+      <div class="view-head">
+        <h1>Document Templates</h1>
+        <p>The SWMS library used by Document Generator — add, edit or retire templates here.</p>
+      </div>
+      <div class="toolbar">
+        <span class="cell-muted" id="doctemplates-count"></span>
+        <button class="btn btn-primary" id="doctemplate-add-btn" style="margin-left:auto;">+ Add template</button>
+      </div>
+      <div id="doctemplate-form-panel" class="panel" style="display:none;"></div>
+      <div id="doctemplates-list" class="workflow-list"></div>
     </section>
 
     <!-- INTEGRATIONS (via gear) -->
@@ -457,11 +475,12 @@
     <section class="view" id="view-ptraining" data-view="ptraining">
       <div class="view-head">
         <h1>Training &amp; Certification</h1>
-        <p>Synced from Moodle, publish to the website. No member or non-member targeting here.</p>
+        <p>Synced from Moodle and VetTrak separately, publish to the website. No member or non-member targeting here.</p>
       </div>
       <div class="toolbar">
         <span class="cell-muted" id="ptraining-sync-status"></span>
-        <button class="btn" id="ptraining-sync-btn" style="margin-left:auto;">Sync now (Moodle)</button>
+        <button class="btn" id="ptraining-sync-moodle-btn" style="margin-left:auto;">Sync now (Moodle)</button>
+        <button class="btn" id="ptraining-sync-vettrak-btn">Sync now (VetTrak)</button>
         <button class="btn btn-primary" id="ptraining-add-btn">+ Add training</button>
       </div>
       <div id="ptraining-form-panel" class="panel" style="display:none;"></div>
@@ -495,18 +514,9 @@
     <section class="view" id="view-pdocgen" data-view="pdocgen">
       <div class="view-head">
         <h1>Document Generator</h1>
-        <p>Review and publish edits submitted for member documents.</p>
+        <p>Review and publish edits submitted against the SWMS library. Templates are managed in Settings.</p>
       </div>
       <div id="pdocgen-reviews"></div>
-      <div class="panel">
-        <div class="panel__head"><h2>Templates</h2></div>
-        <div id="pdocgen-templates" class="workflow-list"></div>
-      </div>
-      <div class="panel">
-        <div class="panel__head"><h2>Generate a document</h2></div>
-        <div id="pdocgen-form" class="campaign-builder"></div>
-        <div id="pdocgen-preview" class="doc-preview" style="display:none;"></div>
-      </div>
     </section>
 
   </main>

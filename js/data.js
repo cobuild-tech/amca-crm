@@ -333,6 +333,95 @@ const COMPANIES = [
       { date: "2026-07-30", type: "lead", label: "Enquiry submitted via referral, owner assigned: Michael Hamilton" },
     ],
   },
+  {
+    id: "c12",
+    name: "Riverside Air Pty Ltd",
+    abn: "40 118 552 903",
+    category: "Contractor Member",
+    memberState: "prospect",
+    onboardingStage: "enquiry",
+    renewalStage: null,
+    owner: "Marie Neisler",
+    source: "Website enquiry form",
+    joinDate: null,
+    renewalDate: null,
+    website: "riversideair.com.au",
+    address: "9 Wharf St, Mackay QLD",
+    xero: null,
+    mailchimp: { synced: false, segments: [] },
+    people: [{ id: "p16", name: "Callum Reid", role: "Primary Contact", email: "callum@riversideair.com.au", phone: "0419 552 018", primary: true }],
+    timeline: [
+      { date: "2026-08-29", type: "email", label: "Enquiry received — auto-acknowledgement sent" },
+      { date: "2026-08-29", type: "lead", label: "Enquiry submitted via website form, owner assigned: Marie Neisler" },
+    ],
+  },
+  {
+    id: "c13",
+    name: "Skyline Mechanical Services",
+    abn: "27 664 210 337",
+    category: "Contractor Member",
+    memberState: "prospect",
+    onboardingStage: "enquiry",
+    renewalStage: null,
+    owner: "Marie Neisler",
+    source: "Website enquiry form",
+    joinDate: null,
+    renewalDate: null,
+    website: "skylinemech.com.au",
+    address: "22 Aviation Rd, Essendon Fields VIC",
+    xero: null,
+    mailchimp: { synced: false, segments: [] },
+    people: [{ id: "p17", name: "Hannah Doyle", role: "Primary Contact", email: "hannah@skylinemech.com.au", phone: "0402 774 561", primary: true }],
+    timeline: [
+      { date: "2026-08-26", type: "email", label: "Enquiry received — auto-acknowledgement sent" },
+      { date: "2026-08-26", type: "lead", label: "Enquiry submitted via website form, owner assigned: Marie Neisler" },
+    ],
+  },
+  {
+    id: "c14",
+    name: "Coolflow Engineering",
+    abn: "55 902 118 447",
+    category: "Corporate Member",
+    memberState: "prospect",
+    onboardingStage: "qualifying",
+    renewalStage: null,
+    owner: "Michael Hamilton",
+    source: "Referral — industry event",
+    joinDate: null,
+    renewalDate: null,
+    website: "coolfloweng.com.au",
+    address: "5 Sarich Court, Osborne Park WA",
+    xero: null,
+    mailchimp: { synced: false, segments: [] },
+    people: [{ id: "p18", name: "Diane Fricker", role: "Primary Contact", email: "diane@coolfloweng.com.au", phone: "0438 220 774", primary: true }],
+    timeline: [
+      { date: "2026-08-21", type: "call", label: "Discovery call completed — eligibility confirmed" },
+      { date: "2026-08-09", type: "lead", label: "Enquiry submitted via referral, owner assigned: Michael Hamilton" },
+    ],
+  },
+  {
+    id: "c15",
+    name: "Precision Air Systems",
+    abn: "69 331 774 208",
+    category: "Contractor Member",
+    memberState: "prospect",
+    onboardingStage: "application",
+    renewalStage: null,
+    owner: "Marie Neisler",
+    source: "Website enquiry form",
+    joinDate: null,
+    renewalDate: null,
+    website: "precisionairsystems.com.au",
+    address: "14 Enterprise Dr, Wodonga VIC",
+    xero: null,
+    mailchimp: { synced: false, segments: [] },
+    people: [{ id: "p19", name: "Trent Baxter", role: "Primary Contact", email: "trent@precisionairsystems.com.au", phone: "0417 664 209", primary: true }],
+    timeline: [
+      { date: "2026-08-23", type: "application", label: "Membership application submitted for review" },
+      { date: "2026-08-14", type: "status", label: "Qualified — moved to Application stage" },
+      { date: "2026-08-02", type: "lead", label: "Enquiry submitted via website form, owner assigned: Marie Neisler" },
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -393,14 +482,19 @@ const TRAININGS = [
   { id: "t04", name: "Apprentice Skills Bootcamp", date: "2026-10-20", format: "Certification", registrations: 22, audience: "Non-members (career pathway)", hours: 40, published: false },
 ];
 
-// Events/training are normally synced from CEvent (see INTEGRATIONS); these
-// are "new" records waiting to be pulled in by the Sync now action, so the
-// sync flow has something to demonstrate. Manual creation stays available too.
+// Events are synced from CEvent; Training is synced from Moodle (e-learning
+// modules) and VetTrak (RTO/compliance enrolments) separately — the two
+// systems cover different kinds of training records. These are the "new"
+// records waiting to be pulled in by each Sync now action. Manual creation
+// stays available too.
 const EVENTS_PENDING_SYNC = [
   { id: "e05", name: "Regional Roadshow — Newcastle", date: "2026-10-02", format: "In-person", registrations: 0, audience: "Members + Non-members", published: false },
 ];
-const TRAININGS_PENDING_SYNC = [
+const TRAININGS_PENDING_SYNC_MOODLE = [
   { id: "t05", name: "Cert III Pathway Info Session", date: "2026-10-15", format: "Info session", registrations: 0, audience: "Non-members (career pathway)", hours: 2, published: false },
+];
+const TRAININGS_PENDING_SYNC_VETTRAK = [
+  { id: "t06", name: "Cert IV in HVAC/R — Enrolment Batch (Nov intake)", date: "2026-11-03", format: "Certification", registrations: 0, audience: "Non-members (career pathway)", hours: 120, published: false },
 ];
 
 // ---------------------------------------------------------------------------
@@ -505,8 +599,9 @@ const INTEGRATIONS = [
   { id: "xero", name: "Xero", role: "Onboarding & renewal invoices + payment status", status: "connected", lastSync: "2026-09-01 08:14" },
   { id: "mailchimp", name: "Mailchimp", role: "Contacts, segments & campaign analytics", status: "connected", lastSync: "2026-09-01 07:50" },
   { id: "website", name: "AMCA Website", role: "Login, paywall & member resources, CMS publishing", status: "connected", lastSync: "2026-09-01 08:20" },
-  { id: "cevent", name: "CEvent", role: "Events & training registrations sync", status: "connected", lastSync: "2026-08-30 06:00" },
-  { id: "moodle", name: "Moodle", role: "Training course sync (Platform view)", status: "connected", lastSync: "2026-08-30 06:00" },
+  { id: "cevent", name: "CEvent", role: "Events registrations sync", status: "connected", lastSync: "2026-08-30 06:00" },
+  { id: "moodle", name: "Moodle", role: "Training e-learning module sync", status: "connected", lastSync: "2026-08-30 06:00" },
+  { id: "vettrak", name: "VetTrak", role: "RTO training enrolment & compliance sync", status: "connected", lastSync: "2026-08-30 06:00" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -555,25 +650,28 @@ const HANDBOOK = {
 };
 
 // ---------------------------------------------------------------------------
-// Document Generator — templates staff can edit and generate per company.
+// Document Generator — a Safe Work Method Statement (SWMS) library, not a
+// membership-document tool. Templates are managed from Settings; this view
+// is purely the review → publish workflow for edits submitted against them.
 // ---------------------------------------------------------------------------
 const DOC_TEMPLATES = [
-  { id: "d1", name: "Membership Certificate", appliesTo: "Active members", body: "This certifies that {{company_name}} is a financial {{category}} of AMCA Australia, member since {{member_since}}.", active: true, updated: "2026-06-01" },
-  { id: "d2", name: "Welcome Letter", appliesTo: "New members", body: "Dear {{primary_contact}}, welcome to AMCA Australia. {{company_name}} is now a {{category}}, effective {{member_since}}.", active: true, updated: "2026-05-12" },
-  { id: "d3", name: "Renewal Invoice Cover Letter", appliesTo: "Renewal due members", body: "Dear {{primary_contact}}, please find attached your AMCA renewal invoice ({{invoice_no}}) for {{company_name}}, due {{renewal_date}}.", active: true, updated: "2026-07-30" },
-  { id: "d4", name: "Compliance Statement", appliesTo: "Active members", body: "{{company_name}} ({{abn}}) is confirmed as a current {{category}} of AMCA Australia in good standing as at today's date.", active: false, updated: "2026-04-22" },
+  { id: "d1", name: "HVAC Equipment Installation SWMS", appliesTo: "Installation crews", body: "Scope: lifting, positioning and commissioning of HVAC plant. Hazards: manual handling, working at height, electrical isolation. Controls: two-person lift, isolation permit, PPE per AS/NZS 4576.", active: true, updated: "2026-06-01" },
+  { id: "d2", name: "Confined Space Entry SWMS", appliesTo: "Confined space work", body: "Scope: entry into plant rooms and ductwork for inspection or repair. Hazards: atmospheric, entrapment. Controls: entry permit, gas testing, standby person, rescue plan per AS 2865.", active: true, updated: "2026-05-12" },
+  { id: "d3", name: "Refrigerant Handling SWMS", appliesTo: "Licensed technicians", body: "Scope: recovery, charging and disposal of refrigerant. Hazards: chemical exposure, pressure release. Controls: ARC licence verification, recovery equipment, F-Gas handling procedure.", active: true, updated: "2026-07-30" },
+  { id: "d4", name: "Working at Heights SWMS", appliesTo: "Roof and plant room work", body: "Scope: roof-mounted plant access and maintenance. Hazards: falls, weather exposure. Controls: harness and anchor point inspection, exclusion zone, weather hold criteria.", active: false, updated: "2026-04-22" },
 ];
 
-// Document Management workflow: a generated document sits "Awaiting review"
-// until an approver publishes it; each publish bumps the version.
+// Document Management workflow: an edited SWMS sits "Awaiting review" until
+// an approver publishes it; each publish bumps the version.
 const DOC_REVIEWS_SEED = {
   awaiting: [
-    { id: "dr1", category: "Membership Certificate", title: "Membership Certificate — Vantage Air Pty Ltd", editedBy: "Marie Neisler", submitted: "2026-08-31" },
+    { id: "dr1", category: "SWMS", title: "Refrigerant Handling — SWMS-004", editedBy: "John Castillo", submitted: "2026-08-31" },
   ],
   published: [
-    { id: "dp1", category: "Welcome Letter", title: "Welcome Letter — Delta Cooling Co", editedBy: "Marie Neisler", approvedBy: "Michael Hamilton", when: "2026-08-31", version: 3 },
-    { id: "dp2", category: "Welcome Letter", title: "Welcome Letter — Delta Cooling Co", editedBy: "Michael Hamilton", approvedBy: "Michael Hamilton", when: "2026-08-17", version: 2 },
-    { id: "dp3", category: "Renewal Invoice Cover Letter", title: "Renewal Invoice Cover Letter — BreezeTech Industries", editedBy: "Brooke Alexander", approvedBy: "Andrew Kendt", when: "2026-08-12", version: 1 },
+    { id: "dp1", category: "SWMS", title: "HVAC Equipment Installation — SWMS-001", editedBy: "John Castillo", approvedBy: "Ben Fogerty", when: "2026-08-31", version: 4 },
+    { id: "dp2", category: "SWMS", title: "HVAC Equipment Installation — SWMS-001", editedBy: "Ben Fogerty", approvedBy: "Ben Fogerty", when: "2026-08-17", version: 3 },
+    { id: "dp3", category: "SWMS", title: "HVAC Equipment Installation — SWMS-001", editedBy: "Ben Fogerty", approvedBy: "Ben Hawkins", when: "2026-08-12", version: 2 },
+    { id: "dp4", category: "SWMS", title: "Confined Space Entry — SWMS-002", editedBy: "John Castillo", approvedBy: "Ben Fogerty", when: "2026-08-05", version: 1 },
   ],
 };
 

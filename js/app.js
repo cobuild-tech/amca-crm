@@ -25,7 +25,8 @@ const state = {
   events: JSON.parse(JSON.stringify(EVENTS)),
   trainings: JSON.parse(JSON.stringify(TRAININGS)),
   eventsSynced: false,
-  trainingsSynced: false,
+  trainingsMoodleSynced: false,
+  trainingsVetTrakSynced: false,
   docTemplates: JSON.parse(JSON.stringify(DOC_TEMPLATES)),
   docReviews: JSON.parse(JSON.stringify(DOC_REVIEWS_SEED)),
   feedbackRange: "30 days",
@@ -33,7 +34,7 @@ const state = {
   appMode: "crm",
   currentUser: CURRENT_USER,
   actionFilter: "mine",
-  subtab: { members: "members-pipeline", nonmembers: "nonmembers-contacts", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-send", users: "users-members" },
+  subtab: { members: "members-pipeline", nonmembers: "nonmembers-campaigns", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-send", users: "users-members" },
   editingBenefitId: null,
   dismissedActions: new Set(),
   actionAssignee: {},
@@ -179,6 +180,7 @@ function renderView(viewId) {
     case "training": return renderTraining();
     case "cms": return renderCmsSection();
     case "automation": return renderAutomation();
+    case "doctemplates": return renderDocTemplatesSettings();
     case "integrations": return renderIntegrations();
     case "users": return renderUsersView();
     case "organizations": return renderOrganizations();
@@ -186,7 +188,7 @@ function renderView(viewId) {
     case "ptraining": return renderTrainingSimple();
     case "pbenefits": return renderBenefitsSimple();
     case "phandbook": return renderHandbookPanel("phandbook-panel");
-    case "pdocgen": return renderDocGen({ templates: "pdocgen-templates", form: "pdocgen-form", preview: "pdocgen-preview", reviews: "pdocgen-reviews" });
+    case "pdocgen": return renderDocGen({ reviews: "pdocgen-reviews" });
     case "feedback": return renderFeedbackAnalysis();
   }
 }
@@ -717,12 +719,82 @@ function buildCampaignComposer(container, opts) {
   const selection = { memberCriteria: new Set(), nonMemberLists: new Set(), includeSubscribers: false };
 
   const templateSelect = el("select", {}, state.emailTemplates.map((t) => el("option", { value: t.id }, t.name)));
+  const manageBtn = el("button", { class: "btn btn-sm btn-ghost", onclick: () => toggleTemplateManager() }, "Manage templates");
+  const manageHost = el("div", { style: "display:none;" });
   const subjectInput = el("input", { type: "text", placeholder: "Subject line…" });
   const previewInput = el("input", { type: "text", placeholder: "Preview text (inbox snippet)…" });
   const bodyTextarea = el("textarea", { rows: "6", class: "html-editor", placeholder: "<h2>Heading</h2>\n<p>Body copy…</p>" });
   const previewPane = el("div", { class: "email-preview" });
   const summary = el("div", { class: "campaign-summary" });
 
+  const rebuildTemplateSelect = () => {
+    templateSelect.innerHTML = "";
+    state.emailTemplates.forEach((t) => templateSelect.append(el("option", { value: t.id }, t.name)));
+  };
+  function toggleTemplateManager() {
+    manageHost.style.display = manageHost.style.display === "none" ? "block" : "none";
+    if (manageHost.style.display === "block") renderTemplateManager();
+  }
+  function renderTemplateManager() {
+    manageHost.innerHTML = "";
+    const list = el("div", { class: "workflow-list" });
+    state.emailTemplates.forEach((t) => {
+      const row = el("div", { class: "workflow-row" }, [
+        el("div", { class: "workflow-row__top" }, [
+          el("div", { class: "workflow-row__name" }, t.name),
+          el("div", { class: "campaign-row" }, [
+            el("button", { class: "btn btn-sm btn-ghost", onclick: () => openTemplateForm(t.id) }, "Edit"),
+            el("button", {
+              class: "btn btn-sm btn-ghost", onclick: () => {
+                if (state.emailTemplates.length <= 1) { showToast("At least one template must remain.", "info"); return; }
+                if (!confirm(`Delete template "${t.name}"?`)) return;
+                state.emailTemplates = state.emailTemplates.filter((x) => x.id !== t.id);
+                rebuildTemplateSelect();
+                renderTemplateManager();
+                showToast(`"${t.name}" deleted.`, "info");
+              },
+            }, "Delete"),
+          ]),
+        ]),
+        el("div", { class: "workflow-row__subject" }, `“${t.subject || "(no subject)"}”`),
+      ]);
+      list.appendChild(row);
+    });
+    manageHost.append(
+      list,
+      el("button", { class: "btn btn-sm btn-primary", style: "margin-top:10px;", onclick: () => openTemplateForm(null) }, "+ Add template")
+    );
+  }
+  function openTemplateForm(id) {
+    const t = id ? state.emailTemplates.find((x) => x.id === id) : { name: "", subject: "", previewText: "", bodyHtml: "<p></p>" };
+    const nameInput = el("input", { type: "text", value: t.name, placeholder: "Template name" });
+    const subjInput = el("input", { type: "text", value: t.subject, placeholder: "Default subject" });
+    const prevInput = el("input", { type: "text", value: t.previewText, placeholder: "Default preview text" });
+    const bodyInput = el("textarea", { rows: "3" }, t.bodyHtml);
+    const formPanel = el("div", { class: "panel" }, [
+      el("h3", {}, id ? "Edit template" : "Add template"),
+      el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+      el("div", { class: "form-row" }, [el("label", {}, "Default subject"), subjInput]),
+      el("div", { class: "form-row" }, [el("label", {}, "Default preview text"), prevInput]),
+      el("div", { class: "form-row" }, [el("label", {}, "Default body (HTML)"), bodyInput]),
+      el("div", { class: "campaign-row" }, [
+        el("button", {
+          class: "btn btn-sm btn-primary", onclick: () => {
+            if (!nameInput.value.trim()) { showToast("Template name is required.", "info"); return; }
+            const payload = { name: nameInput.value.trim(), subject: subjInput.value, previewText: prevInput.value, bodyHtml: bodyInput.value };
+            if (id) Object.assign(t, payload);
+            else state.emailTemplates.push({ id: genId("tpl"), ...payload });
+            rebuildTemplateSelect();
+            renderTemplateManager();
+            showToast(id ? "Template updated." : "Template added.", "success");
+          },
+        }, "Save"),
+        el("button", { class: "btn btn-sm btn-ghost", onclick: () => renderTemplateManager() }, "Cancel"),
+      ]),
+    ]);
+    manageHost.innerHTML = "";
+    manageHost.append(formPanel);
+  }
   const applyTemplate = () => {
     const t = state.emailTemplates.find((x) => x.id === templateSelect.value) || state.emailTemplates[0];
     subjectInput.value = t.subject;
@@ -782,7 +854,8 @@ function buildCampaignComposer(container, opts) {
   }, "Send via Mailchimp");
 
   container.append(
-    el("div", { class: "campaign-row" }, [el("label", {}, "Template:"), templateSelect]),
+    el("div", { class: "campaign-row" }, [el("label", {}, "Template:"), templateSelect, manageBtn]),
+    manageHost,
     el("div", { class: "campaign-row" }, [el("label", {}, "Subject:"), subjectInput]),
     el("div", { class: "campaign-row" }, [el("label", {}, "Preview text:"), previewInput]),
     el("div", { class: "editor-row" }, [
@@ -991,14 +1064,24 @@ function openEventForm() {
 
 // ------------------------------------------------------------------ training
 function renderTraining() {
-  const cevent = INTEGRATIONS.find((i) => i.id === "cevent");
-  byId("training-sync-status").textContent = state.trainingsSynced ? "Synced with CEvent — up to date" : `Last synced from CEvent: ${cevent.lastSync}`;
-  byId("training-sync-btn").onclick = () => {
-    if (state.trainingsSynced) { showToast("Already up to date with CEvent.", "info"); return; }
-    TRAININGS_PENDING_SYNC.forEach((t) => state.trainings.push({ ...t }));
-    state.trainingsSynced = true;
-    logSync(`CEvent sync: ${TRAININGS_PENDING_SYNC.length} new training record(s) pulled in`);
-    showToast(`${TRAININGS_PENDING_SYNC.length} new training record(s) synced from CEvent.`, "success");
+  const moodle = INTEGRATIONS.find((i) => i.id === "moodle");
+  const vettrak = INTEGRATIONS.find((i) => i.id === "vettrak");
+  const bothSynced = state.trainingsMoodleSynced && state.trainingsVetTrakSynced;
+  byId("training-sync-status").textContent = bothSynced ? "Synced with Moodle & VetTrak — up to date" : `Last synced: Moodle ${moodle.lastSync} · VetTrak ${vettrak.lastSync}`;
+  byId("training-sync-moodle-btn").onclick = () => {
+    if (state.trainingsMoodleSynced) { showToast("Already up to date with Moodle.", "info"); return; }
+    TRAININGS_PENDING_SYNC_MOODLE.forEach((t) => state.trainings.push({ ...t }));
+    state.trainingsMoodleSynced = true;
+    logSync(`Moodle sync: ${TRAININGS_PENDING_SYNC_MOODLE.length} new training record(s) pulled in`);
+    showToast(`${TRAININGS_PENDING_SYNC_MOODLE.length} new training record(s) synced from Moodle.`, "success");
+    renderTraining();
+  };
+  byId("training-sync-vettrak-btn").onclick = () => {
+    if (state.trainingsVetTrakSynced) { showToast("Already up to date with VetTrak.", "info"); return; }
+    TRAININGS_PENDING_SYNC_VETTRAK.forEach((t) => state.trainings.push({ ...t }));
+    state.trainingsVetTrakSynced = true;
+    logSync(`VetTrak sync: ${TRAININGS_PENDING_SYNC_VETTRAK.length} new training record(s) pulled in`);
+    showToast(`${TRAININGS_PENDING_SYNC_VETTRAK.length} new training record(s) synced from VetTrak.`, "success");
     renderTraining();
   };
   byId("training-add-btn").onclick = () => openTrainingForm();
@@ -1360,8 +1443,20 @@ function openListForm(id) {
 }
 function renderNonMemberCampaignsTab() {
   renderCampaignSummary(byId("nonmember-campaign-summary"), "Non-members");
-  buildCampaignComposer(byId("nonmember-campaign-builder"), { mode: "nonmember", onSent: refreshAllCampaignViews });
   renderCampaignsTable(byId("nonmember-campaigns-table"), "Non-members");
+  byId("nonmember-campaign-new-btn").onclick = openCampaignDrawer;
+}
+function openCampaignDrawer() {
+  buildCampaignComposer(byId("nonmember-campaign-builder"), {
+    mode: "nonmember",
+    onSent: () => { refreshAllCampaignViews(); closeCampaignDrawer(); },
+  });
+  byId("campaign-drawer").classList.add("open");
+  byId("campaign-drawer-overlay").classList.add("open");
+}
+function closeCampaignDrawer() {
+  byId("campaign-drawer").classList.remove("open");
+  byId("campaign-drawer-overlay").classList.remove("open");
 }
 
 // ----------------------------------------------------------------- automation
@@ -1542,67 +1637,65 @@ function approveDocReview(reviewId, reviewsContainerId) {
   renderDocReviews(reviewsContainerId);
 }
 function renderDocGen(ids) {
-  const idOf = ids || { templates: "docgen-templates", form: "docgen-form", preview: "docgen-preview", reviews: "docgen-reviews" };
-  if (idOf.reviews) renderDocReviews(idOf.reviews);
-  const wrap = byId(idOf.templates);
+  const idOf = ids || { reviews: "docgen-reviews" };
+  renderDocReviews(idOf.reviews);
+}
+
+// ------------------------------------------------ document templates (Settings)
+function renderDocTemplatesSettings() {
+  byId("doctemplates-count").textContent = `${state.docTemplates.length} templates · ${state.docTemplates.filter((t) => t.active).length} active`;
+  byId("doctemplate-add-btn").onclick = () => openDocTemplateForm(null);
+  const wrap = byId("doctemplates-list");
   wrap.innerHTML = "";
   state.docTemplates.forEach((t) => {
     const row = el("div", { class: "workflow-row" });
     const top = el("div", { class: "workflow-row__top" }, [
       el("div", { class: "workflow-row__name" }, t.name),
-      el("button", { class: "btn btn-sm " + (t.active ? "" : "btn-ghost"), onclick: () => { t.active = !t.active; renderDocGen(ids); } }, t.active ? "Active" : "Paused"),
+      el("button", { class: "btn btn-sm " + (t.active ? "" : "btn-ghost"), onclick: () => { t.active = !t.active; renderDocTemplatesSettings(); } }, t.active ? "Active" : "Paused"),
     ]);
     const meta = el("div", { class: "workflow-row__meta" }, [el("span", {}, [el("b", {}, "Applies to: "), t.appliesTo]), el("span", {}, [el("b", {}, "Updated: "), fmtDate(t.updated)])]);
     const bodyLine = el("div", { class: "workflow-row__subject" }, t.body);
-    const editBtn = el("button", { class: "btn btn-sm btn-ghost", onclick: toggleEdit }, "Edit template");
-    row.append(top, meta, bodyLine, editBtn);
-    function toggleEdit() {
-      if (row.querySelector(".workflow-editor")) { row.querySelector(".workflow-editor").remove(); return; }
-      const textarea = el("textarea", { rows: "3" }, t.body);
-      const editor = el("div", { class: "workflow-editor" }, [
-        el("label", {}, "Template body (use {{merge_fields}})"),
-        textarea,
-        el("div", { class: "campaign-row" }, [
-          el("button", { class: "btn btn-sm btn-primary", onclick: () => { t.body = textarea.value; showToast("Template updated.", "success"); renderDocGen(ids); } }, "Save"),
-          el("button", { class: "btn btn-sm btn-ghost", onclick: () => editor.remove() }, "Cancel"),
-        ]),
-      ]);
-      row.appendChild(editor);
-    }
+    const actions = el("div", { class: "campaign-row" }, [
+      el("button", { class: "btn btn-sm btn-ghost", onclick: () => openDocTemplateForm(t.id) }, "Edit"),
+      el("button", { class: "btn btn-sm btn-ghost", onclick: () => {
+        if (!confirm(`Delete "${t.name}"? This can't be undone.`)) return;
+        state.docTemplates = state.docTemplates.filter((x) => x.id !== t.id);
+        showToast(`"${t.name}" deleted.`, "info");
+        renderDocTemplatesSettings();
+      } }, "Delete"),
+    ]);
+    row.append(top, meta, bodyLine, actions);
     wrap.appendChild(row);
   });
-
-  const form = byId(idOf.form);
-  form.innerHTML = "";
-  const companySelect = el("select", {}, state.companies.map((c) => el("option", { value: c.id }, c.name)));
-  const templateSelect = el("select", {}, state.docTemplates.filter((t) => t.active).map((t) => el("option", { value: t.id }, t.name)));
-  form.append(
-    el("div", { class: "campaign-row" }, [el("label", {}, "Company:"), companySelect, el("label", {}, "Template:"), templateSelect]),
+}
+function openDocTemplateForm(id) {
+  const t = id ? state.docTemplates.find((x) => x.id === id) : { name: "", appliesTo: "", body: "", active: true };
+  const panel = byId("doctemplate-form-panel");
+  panel.style.display = "block";
+  panel.innerHTML = "";
+  const nameInput = el("input", { type: "text", value: t.name, placeholder: "Template name" });
+  const appliesInput = el("input", { type: "text", value: t.appliesTo, placeholder: "Applies to" });
+  const bodyInput = el("textarea", { rows: "4", placeholder: "Template body / checklist" }, t.body);
+  panel.append(
+    el("h3", {}, id ? "Edit template" : "Add template"),
+    el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Applies to"), appliesInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Body"), bodyInput]),
     el("div", { class: "campaign-row" }, [
-      el("button", { class: "btn btn-primary", onclick: () => generateDocument(companySelect.value, templateSelect.value, idOf.preview, idOf.reviews) }, "Generate document"),
+      el("button", {
+        class: "btn btn-primary", onclick: () => {
+          if (!nameInput.value.trim()) { showToast("Template name is required.", "info"); return; }
+          const payload = { name: nameInput.value.trim(), appliesTo: appliesInput.value.trim(), body: bodyInput.value.trim(), updated: TODAY };
+          if (id) Object.assign(t, payload);
+          else state.docTemplates.push({ id: genId("d"), active: true, ...payload });
+          panel.style.display = "none";
+          showToast(id ? "Template updated." : "Template added.", "success");
+          renderDocTemplatesSettings();
+        },
+      }, "Save"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
     ])
   );
-}
-function generateDocument(companyId, templateId, previewId, reviewsContainerId) {
-  const c = state.companies.find((x) => x.id === companyId);
-  const t = state.docTemplates.find((x) => x.id === templateId);
-  const primary = c.people.find((p) => p.primary) || c.people[0];
-  const merged = t.body
-    .replaceAll("{{company_name}}", c.name)
-    .replaceAll("{{category}}", c.category)
-    .replaceAll("{{member_since}}", fmtDate(c.joinDate))
-    .replaceAll("{{renewal_date}}", fmtDate(c.renewalDate))
-    .replaceAll("{{primary_contact}}", primary ? primary.name : "—")
-    .replaceAll("{{abn}}", c.abn)
-    .replaceAll("{{invoice_no}}", c.xero?.invoiceNo || "—");
-  const preview = byId(previewId || "docgen-preview");
-  preview.style.display = "block";
-  preview.innerHTML = "";
-  preview.append(el("h3", {}, `${t.name} — ${c.name}`), el("p", {}, merged));
-  addTimeline(c, "document", `Generated document: ${t.name} (submitted for review)`);
-  state.docReviews.awaiting.push({ id: genId("dr"), category: t.name, title: `${t.name} — ${c.name}`, editedBy: state.currentUser, submitted: TODAY });
-  showToast(`"${t.name}" generated for ${c.name} — submitted for review.`, "success");
-  if (reviewsContainerId) { docReviewTabState[reviewsContainerId] = "awaiting"; renderDocReviews(reviewsContainerId); }
 }
 
 // -------------------------------------------------------------- handbook
@@ -1857,13 +1950,23 @@ function openPEventForm() {
 }
 function renderTrainingSimple() {
   const moodle = INTEGRATIONS.find((i) => i.id === "moodle");
-  byId("ptraining-sync-status").textContent = state.trainingsSynced ? "Synced with Moodle — up to date" : `Last synced from Moodle: ${moodle.lastSync}`;
-  byId("ptraining-sync-btn").onclick = () => {
-    if (state.trainingsSynced) { showToast("Already up to date with Moodle.", "info"); return; }
-    TRAININGS_PENDING_SYNC.forEach((t) => state.trainings.push({ ...t }));
-    state.trainingsSynced = true;
-    logSync(`Moodle sync: ${TRAININGS_PENDING_SYNC.length} new training record(s) pulled in`);
-    showToast(`${TRAININGS_PENDING_SYNC.length} new training record(s) synced from Moodle.`, "success");
+  const vettrak = INTEGRATIONS.find((i) => i.id === "vettrak");
+  const bothSynced = state.trainingsMoodleSynced && state.trainingsVetTrakSynced;
+  byId("ptraining-sync-status").textContent = bothSynced ? "Synced with Moodle & VetTrak — up to date" : `Last synced: Moodle ${moodle.lastSync} · VetTrak ${vettrak.lastSync}`;
+  byId("ptraining-sync-moodle-btn").onclick = () => {
+    if (state.trainingsMoodleSynced) { showToast("Already up to date with Moodle.", "info"); return; }
+    TRAININGS_PENDING_SYNC_MOODLE.forEach((t) => state.trainings.push({ ...t }));
+    state.trainingsMoodleSynced = true;
+    logSync(`Moodle sync: ${TRAININGS_PENDING_SYNC_MOODLE.length} new training record(s) pulled in`);
+    showToast(`${TRAININGS_PENDING_SYNC_MOODLE.length} new training record(s) synced from Moodle.`, "success");
+    renderTrainingSimple();
+  };
+  byId("ptraining-sync-vettrak-btn").onclick = () => {
+    if (state.trainingsVetTrakSynced) { showToast("Already up to date with VetTrak.", "info"); return; }
+    TRAININGS_PENDING_SYNC_VETTRAK.forEach((t) => state.trainings.push({ ...t }));
+    state.trainingsVetTrakSynced = true;
+    logSync(`VetTrak sync: ${TRAININGS_PENDING_SYNC_VETTRAK.length} new training record(s) pulled in`);
+    showToast(`${TRAININGS_PENDING_SYNC_VETTRAK.length} new training record(s) synced from VetTrak.`, "success");
     renderTrainingSimple();
   };
   byId("ptraining-add-btn").onclick = () => openPTrainingForm();
@@ -2139,5 +2242,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", closeSettingsPopover);
   byId("drawer-close").addEventListener("click", closeDrawer);
   byId("drawer-overlay").addEventListener("click", closeDrawer);
+  byId("campaign-drawer-close").addEventListener("click", closeCampaignDrawer);
+  byId("campaign-drawer-overlay").addEventListener("click", closeCampaignDrawer);
   setAppMode("crm");
 });
