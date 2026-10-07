@@ -38,6 +38,7 @@ const state = {
   subtab: { members: "members-pipeline", nonmembers: "nonmembers-campaigns", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-history" },
   editingBenefitId: null,
   composeDraftId: null,
+  imageSlots: {},
   users: JSON.parse(JSON.stringify(USERS)).map((u, i) => ({ ...u, access: i < 2 ? "Admin" : "Editor" })),
   newsletterHistory: { period: "12m", audience: "", status: "All" },
   dismissedActions: new Set(),
@@ -212,7 +213,7 @@ function renderView(viewId) {
     case "ptraining": return renderTrainingSimple();
     case "pbenefits": return renderBenefitsSimple();
     case "phandbook": return renderHandbookPanel("phandbook-panel");
-    case "pdocgen": return renderDocGen({ reviews: "pdocgen-reviews" });
+    case "pdocgen": renderDocGenUsage("pdocgen-usage"); return renderDocGen({ reviews: "pdocgen-reviews" });
   }
 }
 
@@ -246,6 +247,7 @@ function switchSubtab(section, id) {
     else if (id === "newsletter-unsub") renderUnsubEditor();
   } else if (section === "cms") {
     if (id === "cms-usage") renderUsersUsage();
+    else if (id === "cms-images") renderImagePlacements();
     else renderCmsPanel(id.replace("cms-", ""));
   }
 }
@@ -2199,6 +2201,8 @@ function renderCmsSection() {
   if (!subtabWrap.children.length) {
     CMS_TYPES.forEach((t) => subtabWrap.append(el("button", { class: "subtab-btn", "data-subtab": "cms-" + t.key }, t.label)));
     CMS_TYPES.forEach((t) => panelsWrap.append(el("div", { class: "subtab-panel", id: "cms-" + t.key })));
+    subtabWrap.append(el("button", { class: "subtab-btn", "data-subtab": "cms-images" }, "Images"));
+    panelsWrap.append(el("div", { class: "subtab-panel", id: "cms-images" }));
     subtabWrap.append(el("button", { class: "subtab-btn", "data-subtab": "cms-usage" }, "Usage"));
   }
   switchSubtab("cms", state.subtab.cms);
@@ -2653,23 +2657,272 @@ function renderFormFieldsSettings() {
 }
 
 // -------------------------------------------------------------- handbook
+// ------------------------------------------------- tool usage dashboards
+// Handbook and Document Generator are built as separate apps. Here the
+// platform shows how they're being used across the member base, plus an
+// entry point that will redirect to the real app once it's connected.
+const USAGE_PERIODS = [["30d", "Last 30 days"], ["90d", "Last 90 days"], ["12m", "Last 12 months"]];
+function dailyUsageSeries(seed, baseline) {
+  const rnd = seededRandom(seed);
+  const end = new Date(TODAY);
+  const days = [];
+  for (let i = 364; i >= 0; i--) {
+    const d = new Date(end); d.setDate(end.getDate() - i);
+    const dow = d.getDay();
+    const weekday = dow === 0 || dow === 6 ? 0.25 : 1;
+    const growth = 0.7 + 0.3 * ((364 - i) / 364);
+    days.push({ date: d.toISOString().slice(0, 10), v: Math.round(baseline * weekday * growth * (0.75 + rnd() * 0.5)) });
+  }
+  return days;
+}
+function bucketSeries(days, period) {
+  if (period === "30d") return days.slice(-30).map((d) => ({ label: fmtDate(d.date).replace(/ 20\d\d$/, ""), v: d.v }));
+  if (period === "90d") {
+    const last = days.slice(-91), out = [];
+    for (let i = 0; i < last.length; i += 7) { const wk = last.slice(i, i + 7); out.push({ label: "w/c " + fmtDate(wk[0].date).replace(/ 20\d\d$/, ""), v: wk.reduce((s, d) => s + d.v, 0) }); }
+    return out;
+  }
+  const map = new Map();
+  days.forEach((d) => { const k = d.date.slice(0, 7); map.set(k, (map.get(k) || 0) + d.v); });
+  return [...map.entries()].slice(-12).map(([k, v]) => ({ label: new Date(k + "-01").toLocaleString("en-AU", { month: "short" }), v }));
+}
+function sumPeriod(days, period) {
+  const n = period === "30d" ? 30 : period === "90d" ? 91 : 365;
+  return days.slice(-n).reduce((s, d) => s + d.v, 0);
+}
+function orgUsageRows(seed, total, period) {
+  const rnd = seededRandom(seed + period);
+  const weights = USAGE_MEMBER_ORGS.map((o, i) => ({ o, w: i % 6 === 5 ? 0 : o.seats * (0.3 + rnd() * 1.1) }));
+  const tw = weights.reduce((s, x) => s + x.w, 0);
+  return weights.map(({ o, w }) => {
+    const value = Math.round((w / tw) * total);
+    const lastDays = value ? Math.floor(rnd() * (period === "30d" ? 20 : 45)) : null;
+    const last = lastDays == null ? null : new Date(new Date(TODAY).getTime() - lastDays * 86400000).toISOString().slice(0, 10);
+    return { ...o, value, users: value ? Math.max(1, Math.min(o.seats, Math.round(o.seats * (0.35 + rnd() * 0.6)))) : 0, last };
+  }).sort((a, b) => b.value - a.value);
+}
+function usagePeriodToggle(current, onChange) {
+  return el("div", { class: "segmented" }, USAGE_PERIODS.map(([k, l]) => el("button", { class: "segmented__btn" + (current === k ? " active" : ""), onclick: () => onChange(k) }, l)));
+}
+function appLaunchBanner({ title, text, cta, url }) {
+  return el("div", { class: "app-launch" }, [
+    el("div", { class: "app-launch__icon", "aria-hidden": "true" }, "↗"),
+    el("div", { class: "app-launch__text" }, [el("strong", {}, title), el("p", {}, text), el("code", {}, url)]),
+    el("button", { class: "btn btn-primary", onclick: () => showToast(`Will redirect to ${url} once the app is connected — placeholder for now.`, "info") }, cta),
+  ]);
+}
+function orgUsageTable(rows, cols) {
+  const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Member organisation", "State", ...cols.map((c) => c.label), "Last activity"].map((h) => el("th", {}, h))))]);
+  const tb = el("tbody");
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  rows.forEach((r) => tb.append(el("tr", {}, [
+    el("td", {}, [el("div", { class: "cell-primary" }, r.name), el("div", { class: "cell-sub" }, r.category)]),
+    el("td", { class: "cell-muted" }, r.state),
+    ...cols.map((c) => el("td", {}, c.render(r, max))),
+    el("td", { class: "cell-muted" }, r.last ? fmtDate(r.last) : el("span", { class: "badge badge-warning" }, "No activity")),
+  ])));
+  table.append(tb);
+  return el("div", { class: "data-table" }, table);
+}
+const shareCell = (r, max, text) => el("div", { class: "share-bar" }, [el("div", { class: "share-bar__fill", style: `width:${(r.value / max) * 100}%` }), el("span", {}, text)]);
+
 function renderHandbookPanel(targetId) {
   const panel = byId(targetId || "phandbook-panel");
+  const period = state.handbookPeriod || "90d";
   panel.innerHTML = "";
+  const sessionsDaily = dailyUsageSeries("hb-sessions", 42);
+  const sessions = sumPeriod(sessionsDaily, period);
+  const readers = Math.round(sessions * 0.38);
+  const reads = Math.round(sessions * 2.4);
+  const orgs = orgUsageRows("hb", sessions, period);
+  const activeOrgs = orgs.filter((o) => o.value).length;
+  const buckets = bucketSeries(sessionsDaily, period);
+
   panel.append(
-    el("div", { class: "panel" }, [
-      el("dl", { class: "drawer-kv", style: "grid-template-columns:160px 1fr;" }, [
-        el("dt", {}, "Handbook"), el("dd", {}, HANDBOOK.name),
-        el("dt", {}, "System"), el("dd", {}, HANDBOOK.system),
-        el("dt", {}, "Sections"), el("dd", {}, String(HANDBOOK.sections)),
-        el("dt", {}, "Last published"), el("dd", {}, fmtDate(HANDBOOK.lastPublished)),
-      ]),
-      el("div", { class: "campaign-row", style: "margin-top:12px;" }, [
-        el("button", { class: "btn btn-primary", onclick: () => showToast("Opens " + HANDBOOK.editUrl + " (separate system).", "info") }, "Edit handbook"),
-        el("button", { class: "btn", onclick: () => showToast("Opens " + HANDBOOK.viewUrl + " (separate system).", "info") }, "View live handbook"),
-      ]),
-    ])
+    appLaunchBanner({ title: "Open the Handbook", text: "The handbook itself is being built as a separate app. This button will take staff straight into it (and editors into its admin) once it's connected.", cta: "Open Handbook ↗", url: HANDBOOK.viewUrl }),
+    el("div", { class: "toolbar toolbar--filters" }, [usagePeriodToggle(period, (k) => { state.handbookPeriod = k; renderHandbookPanel(targetId); }),
+      el("span", { class: "cell-muted", style: "margin-left:auto;" }, `${HANDBOOK.sections} sections · last published ${fmtDate(HANDBOOK.lastPublished)}`)]),
   );
+  const stats = el("div", { class: "stat-grid stat-grid--5" }, [
+    statCard("Reading sessions", sessions.toLocaleString(), USAGE_PERIODS.find((p) => p[0] === period)[1], ""),
+    statCard("Unique readers", readers.toLocaleString(), "Member staff who opened it", "accent-teal"),
+    statCard("Section reads", reads.toLocaleString(), `${(reads / sessions).toFixed(1)} sections per session`, ""),
+    statCard("Avg. reading time", "6m 40s", "Per session", "accent-orange"),
+    statCard("Member orgs reading", `${activeOrgs} / ${orgs.length}`, `${Math.round((activeOrgs / orgs.length) * 100)}% of members`, ""),
+  ]);
+  panel.append(stats);
+
+  const sectionRnd = seededRandom("hb-sections" + period);
+  const sectionRows = HANDBOOK_SECTIONS.map((name, i) => ({ name, value: Math.round(reads * (i < 6 ? 0.1 + sectionRnd() * 0.06 : 0.02 + sectionRnd() * 0.04)) })).sort((a, b) => b.value - a.value);
+  const sMax = sectionRows[0].value;
+  const sectionTable = el("table", {}, [el("thead", {}, el("tr", {}, ["Section", "Reads"].map((h) => el("th", {}, h))))]);
+  const stb = el("tbody");
+  sectionRows.slice(0, 8).forEach((r) => stb.append(el("tr", {}, [el("td", { class: "cell-primary" }, r.name), el("td", {}, shareCell(r, sMax, r.value.toLocaleString()))])));
+  sectionTable.append(stb);
+
+  panel.append(el("div", { class: "grid-2 grid-2--wide-left" }, [
+    el("div", { class: "panel" }, [el("div", { class: "panel__head" }, [el("h2", {}, "Reading sessions"), el("span", { class: "cell-muted" }, period === "30d" ? "Per day" : period === "90d" ? "Per week" : "Per month")]),
+      lineChart({ labels: buckets.map((b) => b.label), series: [{ name: "Sessions", color: CHART_COLORS.primary, values: buckets.map((b) => b.v) }], yFormat: (v) => Math.round(v).toLocaleString() })]),
+    el("div", { class: "panel" }, [el("div", { class: "panel__head" }, [el("h2", {}, "Most-read sections")]), el("div", { class: "data-table" }, sectionTable)]),
+  ]));
+  panel.append(el("div", { class: "panel" }, [
+    el("div", { class: "panel__head" }, [el("h2", {}, "By member organisation"), el("span", { class: "cell-muted" }, "Orgs with no activity are worth a nudge")]),
+    orgUsageTable(orgs, [
+      { label: "Readers", render: (r) => `${r.users} / ${r.seats}` },
+      { label: "Sessions", render: (r, max) => shareCell(r, max, r.value.toLocaleString()) },
+    ]),
+  ]));
+}
+
+function renderDocGenUsage(targetId) {
+  const panel = byId(targetId);
+  const period = state.docgenPeriod || "90d";
+  panel.innerHTML = "";
+  const genDaily = dailyUsageSeries("dg-generated", 11);
+  const generated = sumPeriod(genDaily, period);
+  const dlDaily = genDaily.map((d, i) => ({ ...d, v: Math.round(d.v * (0.74 + seededRandom("dl" + i)() * 0.18)) }));
+  const downloaded = sumPeriod(dlDaily, period);
+  const orgs = orgUsageRows("dg", generated, period);
+  const activeOrgs = orgs.filter((o) => o.value).length;
+  const g = bucketSeries(genDaily, period), d = bucketSeries(dlDaily, period);
+
+  panel.append(
+    appLaunchBanner({ title: "Open the Document Generator", text: "Members generate SWMS and safety documents in the Document Generator app, which is being built separately. This will redirect there once it's connected.", cta: "Open Document Generator ↗", url: "docs.amca.com.au" }),
+    el("div", { class: "toolbar toolbar--filters" }, [usagePeriodToggle(period, (k) => { state.docgenPeriod = k; renderDocGenUsage(targetId); })]),
+    el("div", { class: "stat-grid stat-grid--5" }, [
+      statCard("Documents generated", generated.toLocaleString(), USAGE_PERIODS.find((p) => p[0] === period)[1], ""),
+      statCard("Downloaded", downloaded.toLocaleString(), `${Math.round((downloaded / generated) * 100)}% of generated`, "accent-teal"),
+      statCard("Member orgs using", `${activeOrgs} / ${orgs.length}`, `${Math.round((activeOrgs / orgs.length) * 100)}% of members`, ""),
+      statCard("Avg. per active org", (generated / Math.max(1, activeOrgs)).toFixed(1), "Documents generated", "accent-orange"),
+      statCard("Templates in library", state.docTemplates.length, `${state.docTemplates.filter((t) => t.active).length} active`, ""),
+    ]),
+  );
+  const tRnd = seededRandom("dg-templates" + period);
+  const tRows = state.docTemplates.map((t) => { const v = Math.round(generated * (0.05 + tRnd() * 0.2)); return { name: t.title, code: t.code, value: v, dl: Math.round(v * (0.75 + tRnd() * 0.2)) }; }).sort((a, b) => b.value - a.value);
+  const tMax = Math.max(1, ...tRows.map((r) => r.value));
+  const tTable = el("table", {}, [el("thead", {}, el("tr", {}, ["Template", "Generated"].map((h) => el("th", {}, h))))]);
+  const ttb = el("tbody");
+  tRows.slice(0, 8).forEach((r) => ttb.append(el("tr", {}, [el("td", {}, [el("div", { class: "cell-primary" }, r.name), el("div", { class: "cell-sub" }, `${r.code} · ${r.dl.toLocaleString()} downloaded`)]), el("td", {}, shareCell(r, tMax, r.value.toLocaleString()))])));
+  tTable.append(ttb);
+  panel.append(el("div", { class: "grid-2 grid-2--wide-left" }, [
+    el("div", { class: "panel" }, [el("div", { class: "panel__head" }, [el("h2", {}, "Generated vs downloaded"), el("span", { class: "cell-muted" }, period === "30d" ? "Per day" : period === "90d" ? "Per week" : "Per month")]),
+      lineChart({ labels: g.map((b) => b.label), series: [
+        { name: "Generated", color: CHART_COLORS.primary, values: g.map((b) => b.v) },
+        { name: "Downloaded", color: CHART_COLORS.secondary, values: d.map((b) => b.v) },
+      ], yFormat: (v) => Math.round(v).toLocaleString() })]),
+    el("div", { class: "panel" }, [el("div", { class: "panel__head" }, [el("h2", {}, "Most-used templates")]), el("div", { class: "data-table" }, tTable)]),
+  ]));
+  panel.append(el("div", { class: "panel" }, [
+    el("div", { class: "panel__head" }, [el("h2", {}, "By member organisation"), el("span", { class: "cell-muted" }, "Orgs with no activity are worth a nudge")]),
+    orgUsageTable(orgs, [
+      { label: "Users", render: (r) => `${r.users} / ${r.seats}` },
+      { label: "Generated", render: (r, max) => shareCell(r, max, r.value.toLocaleString()) },
+      { label: "Downloaded", render: (r) => Math.round(r.value * 0.82).toLocaleString() },
+    ]),
+  ]));
+}
+
+
+// ---------------------------------------------------------- website images
+function ratioLabel(w, h) {
+  const g = (a, b) => (b ? g(b, a % b) : a);
+  const d = g(w, h);
+  return `${w / d}:${h / d}`;
+}
+function renderImagePlacements() {
+  const panel = byId("cms-images");
+  panel.innerHTML = "";
+  const filter = state.imagePageFilter || "";
+  const pages = [...new Set(IMAGE_PLACEMENTS.map((p) => p.page))];
+  const filled = IMAGE_PLACEMENTS.filter((p) => state.imageSlots[p.id]).length;
+  const pageSel = el("select", { onchange: (e) => { state.imagePageFilter = e.target.value; renderImagePlacements(); } }, [["", "All pages"], ...pages.map((p) => [p, p])].map(([v, l]) => { const o = el("option", { value: v }, l); if (v === filter) o.selected = true; return o; }));
+  panel.append(
+    el("p", { class: "subtab-intro" }, "Every image slot on amca.com.au has one exact size. Upload any image — it's checked against the slot, resized or centre-cropped to fit, and compressed for the web."),
+    el("div", { class: "toolbar toolbar--filters" }, [pageSel, el("span", { class: "cell-muted", style: "margin-left:auto;" }, `${filled} of ${IMAGE_PLACEMENTS.length} slots filled`)]),
+  );
+  const grid = el("div", { class: "img-grid" });
+  IMAGE_PLACEMENTS.filter((p) => !filter || p.page === filter).forEach((p) => grid.append(imagePlacementCard(p)));
+  panel.append(grid);
+}
+function imagePlacementCard(p) {
+  const slot = state.imageSlots[p.id];
+  const card = el("div", { class: "img-card" });
+  const frame = el("div", { class: "img-stage" }, el("div", { class: "img-frame", style: `aspect-ratio:${p.width}/${p.height};width:min(100%, calc(170px * ${p.width} / ${p.height}));` },
+    slot ? el("img", { src: slot.dataUrl, alt: slot.alt || "" }) : el("div", { class: "img-frame__empty" }, [el("strong", {}, `${p.width} × ${p.height}`), el("span", {}, ratioLabel(p.width, p.height))])));
+  const fileInput = el("input", { type: "file", accept: "image/*", style: "display:none;" });
+  const msg = el("div", { class: "img-msg" });
+  const alt = el("input", { type: "text", placeholder: "Alt text — describe the image for screen readers", value: slot?.alt || "" });
+  alt.addEventListener("change", () => { if (state.imageSlots[p.id]) { state.imageSlots[p.id].alt = alt.value.trim(); renderImagePlacements(); } });
+  const status = !slot ? ["Empty", "badge-neutral"] : !slot.alt ? ["Needs alt text", "badge-warning"] : ["Live", "badge-success"];
+  card.append(
+    frame,
+    el("div", { class: "img-card__body" }, [
+      el("div", { class: "img-card__top" }, [el("h3", {}, p.name), el("span", { class: "badge " + status[1] }, status[0])]),
+      el("div", { class: "img-card__specs" }, [el("span", { class: "badge badge-navy" }, p.page), `${p.width} × ${p.height}px · ${ratioLabel(p.width, p.height)} · ${p.formats.join(", ")} · ≤ ${p.maxKb} KB`]),
+      p.note ? el("p", { class: "img-card__note" }, p.note) : null,
+      slot ? el("div", { class: "cell-sub" }, `Uploaded ${fmtDate(slot.uploadedAt)} · ${slot.sourceName} · ${slot.kb} KB${slot.cropped ? " · centre-cropped" : slot.resized ? " · resized" : ""}`) : null,
+      slot ? alt : null,
+      msg,
+      el("div", { class: "campaign-row" }, [
+        el("button", { class: "btn btn-sm " + (slot ? "" : "btn-primary"), onclick: () => fileInput.click() }, slot ? "Replace" : "Upload image"),
+        slot ? el("button", { class: "btn btn-sm btn-ghost btn-danger-text", onclick: () => { if (!confirm(`Remove the image from "${p.name}"?`)) return; delete state.imageSlots[p.id]; renderImagePlacements(); showToast(`"${p.name}" cleared.`, "info"); } }, "Remove") : null,
+        fileInput,
+      ]),
+    ]),
+  );
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { showMsg("That file isn't an image.", "error"); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => handleImage(img, file);
+      img.onerror = () => showMsg("Couldn't read that image.", "error");
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+    fileInput.value = "";
+  });
+  function showMsg(text, kind, actions) {
+    msg.innerHTML = "";
+    msg.className = "img-msg img-msg--" + kind;
+    msg.append(el("div", {}, text));
+    if (actions) msg.append(el("div", { class: "campaign-row", style: "margin-top:6px;" }, actions));
+  }
+  function handleImage(img, file) {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const target = p.width / p.height, actual = w / h;
+    if (w < p.width || h < p.height) {
+      const sameRatio = Math.abs(actual - target) / target < 0.01;
+      showMsg(`Too small: ${w} × ${h}px. This slot needs at least ${p.width} × ${p.height}px${sameRatio ? "" : ` (${ratioLabel(p.width, p.height)})`} — upscaling would look blurry. Please use a larger original.`, "error");
+      return;
+    }
+    if (Math.abs(actual - target) / target < 0.01) { commit(img, file, { resized: w !== p.width }); return; }
+    showMsg(`This image is ${w} × ${h}px (${ratioLabel(w, h)}); the slot is ${p.width} × ${p.height}px (${ratioLabel(p.width, p.height)}). It can be centre-cropped to fit.`, "warn", [
+      el("button", { class: "btn btn-sm btn-primary", onclick: () => commit(img, file, { cropped: true }) }, "Crop to fit"),
+      el("button", { class: "btn btn-sm btn-ghost", onclick: () => { msg.innerHTML = ""; msg.className = "img-msg"; } }, "Cancel"),
+    ]);
+  }
+  function commit(img, file, flags) {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const target = p.width / p.height;
+    let sw = w, sh = h, sx = 0, sy = 0;
+    if (w / h > target) { sw = Math.round(h * target); sx = Math.round((w - sw) / 2); } else { sh = Math.round(w / target); sy = Math.round((h - sh) / 2); }
+    const canvas = document.createElement("canvas");
+    canvas.width = p.width; canvas.height = p.height;
+    canvas.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, p.width, p.height);
+    const mime = p.formats.includes("JPG") ? "image/jpeg" : "image/png";
+    let q = 0.86, dataUrl = canvas.toDataURL(mime, q);
+    const kbOf = (u) => Math.round((u.length * 3) / 4 / 1024);
+    while (mime === "image/jpeg" && kbOf(dataUrl) > p.maxKb && q > 0.4) { q -= 0.08; dataUrl = canvas.toDataURL(mime, q); }
+    const kb = kbOf(dataUrl);
+    if (kb > p.maxKb) { showMsg(`Even compressed, this image is ${kb} KB — over the ${p.maxKb} KB limit. Try a simpler image.`, "error"); return; }
+    state.imageSlots[p.id] = { dataUrl, alt: state.imageSlots[p.id]?.alt || "", uploadedAt: TODAY, sourceName: file.name, kb, ...flags };
+    renderImagePlacements();
+    showToast(`"${p.name}" updated — ${p.width} × ${p.height}px, ${kb} KB. Add alt text to publish.`, "success");
+  }
+  return card;
 }
 
 // -------------------------------------------------------------- integrations

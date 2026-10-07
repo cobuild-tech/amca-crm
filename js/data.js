@@ -715,6 +715,34 @@ const HANDBOOK = {
   viewUrl: "handbook.amca.com.au",
 };
 
+// Usage dashboards (Handbook, Document Generator) report across the whole
+// member base. The CRM's sample COMPANIES list is short, so usage is modelled
+// over this wider roster of member organisations (includes the active ones).
+const HANDBOOK_SECTIONS = [
+  "Welcome & how to use this handbook", "Membership categories & benefits", "Code of conduct", "F-Gas & refrigerant handling",
+  "Work health & safety essentials", "SWMS & risk assessment", "Design standards (AS/NZS 1668, 3666)", "Contracts & payment terms",
+  "Apprentices & training pathways", "Insurance & claims", "Dispute resolution", "Industrial relations & awards",
+  "Technical helpline & advisory", "Governance, AGM & voting",
+];
+const USAGE_MEMBER_ORGS = [
+  { name: "Meridian HVAC Group", category: "Corporate Member", state: "NSW", seats: 14 },
+  { name: "Coastal Air Solutions Pty Ltd", category: "Contractor Member", state: "QLD", seats: 6 },
+  { name: "Vantage Air Pty Ltd", category: "Contractor Member", state: "WA", seats: 5 },
+  { name: "BreezeTech Industries", category: "Associate Member", state: "VIC", seats: 3 },
+  { name: "Southern Cross Mechanical", category: "Corporate Member", state: "VIC", seats: 12 },
+  { name: "Pinnacle Climate Services", category: "Contractor Member", state: "NSW", seats: 7 },
+  { name: "Harbour City Air Conditioning", category: "Contractor Member", state: "NSW", seats: 4 },
+  { name: "Redline Refrigeration", category: "Contractor Member", state: "SA", seats: 4 },
+  { name: "Summit Building Services", category: "Corporate Member", state: "QLD", seats: 10 },
+  { name: "Ironbark Mechanical", category: "Contractor Member", state: "TAS", seats: 3 },
+  { name: "Goldfields HVAC", category: "Contractor Member", state: "WA", seats: 4 },
+  { name: "Capital Air Group", category: "Corporate Member", state: "ACT", seats: 8 },
+  { name: "Tropic Cooling NT", category: "Contractor Member", state: "NT", seats: 2 },
+  { name: "Bayside Ventilation", category: "Associate Member", state: "VIC", seats: 2 },
+  { name: "Northern Star Engineering", category: "Contractor Member", state: "QLD", seats: 5 },
+  { name: "Clearview Facilities", category: "Associate Member", state: "SA", seats: 2 },
+];
+
 // ---------------------------------------------------------------------------
 // Document Generator — a safety-document library (Safety Hub / WHSMS style),
 // not a membership-document tool. Settings → Document Templates manages the
@@ -862,6 +890,23 @@ const CMS_TYPES = [
   { key: "initiatives", label: "Initiatives" },
   { key: "impact", label: "Impact Updates" },
   { key: "careers", label: "Careers" },
+];
+
+// Image placements on amca.com.au. Each slot has one exact output size;
+// uploads are checked against it and can be centre-cropped to fit.
+const IMAGE_PLACEMENTS = [
+  { id: "img-hero", name: "Homepage hero", page: "Home", width: 1920, height: 720, formats: ["JPG", "WebP"], maxKb: 500, note: "Keep text and faces in the centre 1200px — edges crop on smaller screens." },
+  { id: "img-hero-mobile", name: "Homepage hero (mobile)", page: "Home", width: 750, height: 1000, formats: ["JPG", "WebP"], maxKb: 300, note: "Portrait version shown below 768px wide." },
+  { id: "img-banner", name: "Sitewide announcement strip", page: "All pages", width: 1200, height: 200, formats: ["JPG", "PNG", "WebP"], maxKb: 200, note: "Pairs with the Banners content type." },
+  { id: "img-blog", name: "Blog featured image", page: "Blog", width: 1200, height: 630, formats: ["JPG", "WebP"], maxKb: 300, note: "Also used as the social share image for the post." },
+  { id: "img-guide", name: "Guide cover", page: "Guides", width: 800, height: 1000, formats: ["JPG", "PNG"], maxKb: 300, note: "Portrait cover shown on the guides library." },
+  { id: "img-event", name: "Event card", page: "Events", width: 800, height: 450, formats: ["JPG", "WebP"], maxKb: 200, note: "16:9 — used on event listings and the event page header." },
+  { id: "img-training", name: "Training course card", page: "Training", width: 800, height: 450, formats: ["JPG", "WebP"], maxKb: 200, note: "16:9 — course listings." },
+  { id: "img-award", name: "Award winner photo", page: "Awards", width: 600, height: 600, formats: ["JPG", "PNG"], maxKb: 200, note: "Square headshot or team photo." },
+  { id: "img-careers", name: "Careers page header", page: "Careers", width: 1600, height: 500, formats: ["JPG", "WebP"], maxKb: 350, note: "" },
+  { id: "img-newsletter", name: "Newsletter header", page: "Email", width: 600, height: 200, formats: ["JPG", "PNG"], maxKb: 150, note: "Top of every newsletter — emails are 600px wide." },
+  { id: "img-og", name: "Default social share image", page: "All pages", width: 1200, height: 630, formats: ["JPG", "PNG"], maxKb: 300, note: "Used when a page has no image of its own (LinkedIn, Facebook, iMessage previews)." },
+  { id: "img-logo", name: "Member directory logo", page: "Member directory", width: 400, height: 400, formats: ["PNG"], maxKb: 150, note: "Transparent PNG, logo centred with padding." },
 ];
 
 const CMS_CONTENT = {
