@@ -568,3 +568,13 @@ select, input { font-family: inherit; font-size: 14px; }
 .img-msg { font-size: 12.5px; border-radius: 8px; padding: 8px 10px; }
 .img-msg--error { background: var(--danger-light); color: var(--danger); }
 .img-msg--warn { background: var(--warning-light); color: var(--text); }
+
+/* usage overview */
+.stat-grid--4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 900px) { .stat-grid--4 { grid-template-columns: repeat(2, 1fr); } }
+.usage-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
+@media (max-width: 1100px) { .usage-tools { grid-template-columns: 1fr; } }
+.usage-tools .panel { margin-top: 0; }
+.kpi-grid--3 { grid-template-columns: repeat(3, 1fr); }
+.usage-tool .kpi__value { font-size: 18px; }
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; }

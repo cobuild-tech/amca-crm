@@ -48,6 +48,12 @@
       <button class="nav-btn" data-view="phandbook" data-mode="both">Handbook</button>
       <button class="nav-btn" data-view="pdocgen" data-mode="both">Document Generator</button>
 
+      <div class="nav-group-label" data-mode="both">Usage</div>
+      <button class="nav-btn" data-view="usage" data-subtab="usage-overview" data-mode="both">Usage Overview</button>
+      <button class="nav-btn" data-view="usage" data-subtab="usage-chat" data-mode="both">Chat</button>
+      <button class="nav-btn" data-view="usage" data-subtab="usage-handbook" data-mode="both">Handbook Usage</button>
+      <button class="nav-btn" data-view="usage" data-subtab="usage-docgen" data-mode="both">Document Generator Usage</button>
+
       <div class="nav-group-label" data-mode="both">Platform</div>
       <button class="nav-btn" data-view="organizations" data-mode="both">Organizations</button>
       <button class="nav-btn" data-view="pevents" data-mode="platform">Events</button>
@@ -132,7 +138,7 @@
       </div>
       <div class="grid-2">
         <div class="panel">
-          <div class="panel__head"><h2>Platform usage</h2><a class="link-btn" data-goto="cms" data-goto-subtab="cms-usage">Open usage →</a></div>
+          <div class="panel__head"><h2>Platform usage</h2><a class="link-btn" data-goto="usage">Open usage →</a></div>
           <div id="dashboard-usage" class="stat-grid"></div>
         </div>
         <div class="panel">
@@ -344,55 +350,10 @@
     <section class="view" id="view-cms" data-view="cms">
       <div class="view-head">
         <h1>Website</h1>
-        <p>Everything published to amca.com.au — guides, blog, banners, awards, initiatives, impact updates and careers — plus how the site's tools are being used. Events, Training and the Handbook are managed in their own tabs.</p>
+        <p>Everything published to amca.com.au — guides, blog, banners, awards, initiatives, impact updates, careers and site images. Events, Training and the Handbook are managed in their own tabs.</p>
       </div>
       <div class="subtabs" id="cms-subtabs" data-section="cms"></div>
       <div id="cms-panels">
-      <div id="cms-usage" class="subtab-panel">
-        <p class="subtab-intro">How staff and members use the website tools — chat assistant and document generator.</p>
-        <div id="users-usage-grid" class="stat-grid"></div>
-        <div class="subtabs subtabs--nested" id="usage-tabs">
-          <button class="doc-tab-btn active" data-usagetab="chat">Chat</button>
-          <button class="doc-tab-btn" data-usagetab="docgen">Document Generator</button>
-        </div>
-
-        <div id="usage-tab-chat" class="usage-tab-panel active">
-          <div class="panel">
-            <div class="panel__head"><h2>Chat Usage</h2></div>
-            <div id="usage-ai-assist"></div>
-          </div>
-          <div class="panel">
-            <div class="panel__head"><h2>Chat Feedback</h2></div>
-            <p class="cell-muted" style="margin-bottom:10px;">Review user feedback and comments on chats to improve answer quality.</p>
-            <div class="toolbar" id="feedback-range-toolbar" style="justify-content:flex-end;"></div>
-            <div id="feedback-stats" class="stat-grid"></div>
-            <div class="panel" style="margin-top:14px;">
-              <div class="panel__head"><h2>Recent feedback</h2></div>
-              <p class="cell-muted" style="margin-bottom:10px;">Question, answer, and who raised it — for the current filters and date range.</p>
-              <div id="feedback-recent"></div>
-            </div>
-            <div class="grid-2">
-              <div class="panel">
-                <div class="panel__head"><h2>Top 10 topics</h2></div>
-                <p class="cell-muted" style="margin-bottom:10px;">Most common subjects people are asking questions about.</p>
-                <div id="feedback-topics" class="mini-list"></div>
-              </div>
-              <div class="panel">
-                <div class="panel__head"><h2>Top 10 sources</h2></div>
-                <p class="cell-muted" style="margin-bottom:10px;">Documents most referenced in rated answers.</p>
-                <div id="feedback-sources" class="mini-list"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div id="usage-tab-docgen" class="usage-tab-panel">
-          <div class="panel">
-            <div class="panel__head"><h2>Document Generator Usage</h2></div>
-            <div id="usage-doc-generator"></div>
-          </div>
-        </div>
-      </div>
       </div>
     </section>
 
@@ -563,11 +524,51 @@
       <div id="pbenefits-grid" class="benefits-grid"></div>
     </section>
 
+    <!-- USAGE (Overview → Usage): one tab per tool -->
+    <section class="view" id="view-usage" data-view="usage">
+      <div class="view-head">
+        <h1 id="usage-title">Usage</h1>
+        <p id="usage-intro">How staff and members are using each tool on the platform — across all member organisations.</p>
+      </div>
+      <div id="usage-overview" class="subtab-panel"></div>
+        <div id="usage-chat" class="subtab-panel">
+          <div class="panel">
+            <div class="panel__head"><h2>Chat Usage</h2></div>
+            <div id="usage-ai-assist"></div>
+          </div>
+          <div class="panel">
+            <div class="panel__head"><h2>Chat Feedback</h2></div>
+            <p class="cell-muted" style="margin-bottom:10px;">Review user feedback and comments on chats to improve answer quality.</p>
+            <div class="toolbar" id="feedback-range-toolbar" style="justify-content:flex-end;"></div>
+            <div id="feedback-stats" class="stat-grid"></div>
+            <div class="panel" style="margin-top:14px;">
+              <div class="panel__head"><h2>Recent feedback</h2></div>
+              <p class="cell-muted" style="margin-bottom:10px;">Question, answer, and who raised it — for the current filters and date range.</p>
+              <div id="feedback-recent"></div>
+            </div>
+            <div class="grid-2">
+              <div class="panel">
+                <div class="panel__head"><h2>Top 10 topics</h2></div>
+                <p class="cell-muted" style="margin-bottom:10px;">Most common subjects people are asking questions about.</p>
+                <div id="feedback-topics" class="mini-list"></div>
+              </div>
+              <div class="panel">
+                <div class="panel__head"><h2>Top 10 sources</h2></div>
+                <p class="cell-muted" style="margin-bottom:10px;">Documents most referenced in rated answers.</p>
+                <div id="feedback-sources" class="mini-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      <div id="usage-handbook" class="subtab-panel"><div id="usage-handbook-body"></div></div>
+      <div id="usage-docgen" class="subtab-panel"><div id="usage-docgen-body"></div></div>
+    </section>
+
     <!-- HANDBOOK (Platform view) -->
     <section class="view" id="view-phandbook" data-view="phandbook">
       <div class="view-head">
         <h1>Handbook</h1>
-        <p>How members are reading the handbook — sessions, readers and the sections they open, across all member organisations.</p>
+        <p>The member handbook is a separate app — open it from here. Readership across members is under <a href="#" class="link-btn" data-goto="usage" data-goto-subtab="usage-handbook">Usage → Handbook</a>.</p>
       </div>
       <div id="phandbook-panel"></div>
     </section>
@@ -576,9 +577,9 @@
     <section class="view" id="view-pdocgen" data-view="pdocgen">
       <div class="view-head">
         <h1>Document Generator</h1>
-        <p>How members are using the Document Generator — documents generated and downloaded across all member organisations — plus edits waiting for review.</p>
+        <p>The Document Generator is a separate app — open it from here and review template edits. Documents generated and downloaded across members are under <a href="#" class="link-btn" data-goto="usage" data-goto-subtab="usage-docgen">Usage → Document Generator</a>.</p>
       </div>
-      <div id="pdocgen-usage"></div>
+      <div id="pdocgen-launch"></div>
       <div class="panel">
         <div class="panel__head"><h2>Template edits awaiting review</h2></div>
         <div id="pdocgen-reviews"></div>

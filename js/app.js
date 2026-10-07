@@ -35,7 +35,7 @@ const state = {
   appMode: "crm",
   currentUser: CURRENT_USER,
   actionFilter: "mine",
-  subtab: { members: "members-pipeline", nonmembers: "nonmembers-campaigns", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-history" },
+  subtab: { members: "members-pipeline", nonmembers: "nonmembers-campaigns", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-history", usage: "usage-overview" },
   editingBenefitId: null,
   composeDraftId: null,
   imageSlots: {},
@@ -188,7 +188,7 @@ function getCompanyStatusKey(c) {
 function showView(viewId) {
   state.view = viewId;
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.dataset.view === viewId));
-  document.querySelectorAll(".sidebar__nav .nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === viewId));
+  syncNavActive(viewId);
   closeSettingsPopover();
   renderView(viewId);
 }
@@ -213,11 +213,22 @@ function renderView(viewId) {
     case "ptraining": return renderTrainingSimple();
     case "pbenefits": return renderBenefitsSimple();
     case "phandbook": return renderHandbookPanel("phandbook-panel");
-    case "pdocgen": renderDocGenUsage("pdocgen-usage"); return renderDocGen({ reviews: "pdocgen-reviews" });
+    case "usage": return switchSubtab("usage", state.subtab.usage);
+    case "pdocgen": renderDocGenLaunch("pdocgen-launch"); return renderDocGen({ reviews: "pdocgen-reviews" });
   }
 }
 
 // ---------------------------------------------------------------- subtabs
+function syncNavActive(viewId) {
+  document.querySelectorAll(".sidebar__nav .nav-btn").forEach((b) =>
+    b.classList.toggle("active", b.dataset.view === viewId && (!b.dataset.subtab || b.dataset.subtab === state.subtab[viewId])));
+}
+const USAGE_PAGES = {
+  "usage-overview": ["Usage Overview", "How staff and members are using each tool on the platform — across all member organisations."],
+  "usage-chat": ["Chat Usage", "How AMCA staff use the AI chat assistant, and what they think of its answers."],
+  "usage-handbook": ["Handbook Usage", "Reading sessions, readers and the sections they open — across all member organisations."],
+  "usage-docgen": ["Document Generator Usage", "Documents generated and downloaded — across all member organisations."],
+};
 function switchSubtab(section, id) {
   state.subtab[section] = id;
   if (section === "renewal") {
@@ -245,9 +256,16 @@ function switchSubtab(section, id) {
     else if (id === "newsletter-history") renderNewsletterHistory();
     else if (id === "newsletter-subscribers") renderSubscribers();
     else if (id === "newsletter-unsub") renderUnsubEditor();
+  } else if (section === "usage") {
+    byId("usage-title").textContent = USAGE_PAGES[id][0];
+    byId("usage-intro").textContent = USAGE_PAGES[id][1];
+    syncNavActive("usage");
+    if (id === "usage-overview") renderUsageOverview();
+    else if (id === "usage-chat") renderChatUsage();
+    else if (id === "usage-handbook") renderHandbookUsage("usage-handbook-body");
+    else if (id === "usage-docgen") renderDocGenUsage("usage-docgen-body");
   } else if (section === "cms") {
-    if (id === "cms-usage") renderUsersUsage();
-    else if (id === "cms-images") renderImagePlacements();
+    if (id === "cms-images") renderImagePlacements();
     else renderCmsPanel(id.replace("cms-", ""));
   }
 }
@@ -2203,7 +2221,7 @@ function renderCmsSection() {
     CMS_TYPES.forEach((t) => panelsWrap.append(el("div", { class: "subtab-panel", id: "cms-" + t.key })));
     subtabWrap.append(el("button", { class: "subtab-btn", "data-subtab": "cms-images" }, "Images"));
     panelsWrap.append(el("div", { class: "subtab-panel", id: "cms-images" }));
-    subtabWrap.append(el("button", { class: "subtab-btn", "data-subtab": "cms-usage" }, "Usage"));
+
   }
   switchSubtab("cms", state.subtab.cms);
 }
@@ -2692,7 +2710,8 @@ function sumPeriod(days, period) {
 }
 function orgUsageRows(seed, total, period) {
   const rnd = seededRandom(seed + period);
-  const weights = USAGE_MEMBER_ORGS.map((o, i) => ({ o, w: i % 6 === 5 ? 0 : o.seats * (0.3 + rnd() * 1.1) }));
+  const idle = (i) => (seed === "dg" ? i % 4 === 3 : i % 6 === 5);
+  const weights = USAGE_MEMBER_ORGS.map((o, i) => ({ o, w: idle(i) ? 0 : o.seats * (0.3 + rnd() * 1.1) }));
   const tw = weights.reduce((s, x) => s + x.w, 0);
   return weights.map(({ o, w }) => {
     const value = Math.round((w / tw) * total);
@@ -2728,6 +2747,29 @@ const shareCell = (r, max, text) => el("div", { class: "share-bar" }, [el("div",
 
 function renderHandbookPanel(targetId) {
   const panel = byId(targetId || "phandbook-panel");
+  panel.innerHTML = "";
+  panel.append(
+    appLaunchBanner({ title: "Open the Handbook", text: "The handbook itself is being built as a separate app. This button will take staff straight into it (and editors into its admin) once it's connected.", cta: "Open Handbook ↗", url: HANDBOOK.viewUrl }),
+    el("div", { class: "panel" }, [
+      el("dl", { class: "drawer-kv", style: "grid-template-columns:160px 1fr;" }, [
+        el("dt", {}, "Handbook"), el("dd", {}, HANDBOOK.name),
+        el("dt", {}, "System"), el("dd", {}, HANDBOOK.system),
+        el("dt", {}, "Sections"), el("dd", {}, String(HANDBOOK.sections)),
+        el("dt", {}, "Last published"), el("dd", {}, fmtDate(HANDBOOK.lastPublished)),
+      ]),
+      el("div", { class: "campaign-row", style: "margin-top:12px;" }, [
+        el("button", { class: "btn", onclick: () => showToast("Opens " + HANDBOOK.editUrl + " (separate system) — placeholder until connected.", "info") }, "Edit in Handbook admin ↗"),
+        el("button", { class: "btn btn-ghost", onclick: () => { state.subtab.usage = "usage-handbook"; showView("usage"); } }, "See readership →"),
+      ]),
+    ])
+  );
+}
+function handbookTotals(period) {
+  const sessions = sumPeriod(dailyUsageSeries("hb-sessions", 42), period);
+  return { sessions, readers: Math.round(sessions * 0.38), reads: Math.round(sessions * 2.4), orgs: orgUsageRows("hb", sessions, period) };
+}
+function renderHandbookUsage(targetId) {
+  const panel = byId(targetId);
   const period = state.handbookPeriod || "90d";
   panel.innerHTML = "";
   const sessionsDaily = dailyUsageSeries("hb-sessions", 42);
@@ -2739,8 +2781,7 @@ function renderHandbookPanel(targetId) {
   const buckets = bucketSeries(sessionsDaily, period);
 
   panel.append(
-    appLaunchBanner({ title: "Open the Handbook", text: "The handbook itself is being built as a separate app. This button will take staff straight into it (and editors into its admin) once it's connected.", cta: "Open Handbook ↗", url: HANDBOOK.viewUrl }),
-    el("div", { class: "toolbar toolbar--filters" }, [usagePeriodToggle(period, (k) => { state.handbookPeriod = k; renderHandbookPanel(targetId); }),
+    el("div", { class: "toolbar toolbar--filters" }, [usagePeriodToggle(period, (k) => { state.handbookPeriod = k; renderHandbookUsage(targetId); }),
       el("span", { class: "cell-muted", style: "margin-left:auto;" }, `${HANDBOOK.sections} sections · last published ${fmtDate(HANDBOOK.lastPublished)}`)]),
   );
   const stats = el("div", { class: "stat-grid stat-grid--5" }, [
@@ -2774,6 +2815,51 @@ function renderHandbookPanel(targetId) {
   ]));
 }
 
+function renderDocGenLaunch(targetId) {
+  const panel = byId(targetId);
+  panel.innerHTML = "";
+  panel.append(appLaunchBanner({ title: "Open the Document Generator", text: "Members generate SWMS and safety documents in the Document Generator app, which is being built separately. This will redirect there once it's connected.", cta: "Open Document Generator ↗", url: "docs.amca.com.au" }));
+}
+function docgenTotals(period) {
+  const genDaily = dailyUsageSeries("dg-generated", 11);
+  const generated = sumPeriod(genDaily, period);
+  const downloaded = sumPeriod(genDaily.map((d, i) => ({ ...d, v: Math.round(d.v * (0.74 + seededRandom("dl" + i)() * 0.18)) })), period);
+  return { generated, downloaded, orgs: orgUsageRows("dg", generated, period) };
+}
+function renderUsageOverview() {
+  const panel = byId("usage-overview");
+  const period = state.usagePeriod || "90d";
+  panel.innerHTML = "";
+  const hb = handbookTotals(period), dg = docgenTotals(period), ch = chatTotals();
+  const pLabel = USAGE_PERIODS.find((p) => p[0] === period)[1];
+  const tool = (name, sub, tab, stats) => el("div", { class: "panel usage-tool" }, [
+    el("div", { class: "panel__head" }, [el("h2", {}, name), el("a", { class: "link-btn", href: "#", onclick: (e) => { e.preventDefault(); switchSubtab("usage", tab); } }, "Open " + name + " usage →")]),
+    el("p", { class: "panel__intro" }, sub),
+    el("div", { class: "kpi-grid kpi-grid--3" }, stats.map(([l, v, s2]) => el("div", { class: "kpi" }, [el("div", { class: "kpi__label" }, l), el("div", { class: "kpi__value" }, v), s2 ? el("div", { class: "kpi__sub" }, s2) : null]))),
+  ]);
+  const active = (orgs) => orgs.filter((o) => o.value).length;
+  const both = hb.orgs.filter((o) => o.value && dg.orgs.find((d) => d.name === o.name && d.value)).length;
+  const none = USAGE_MEMBER_ORGS.filter((o) => !hb.orgs.find((h) => h.name === o.name && h.value) && !dg.orgs.find((d) => d.name === o.name && d.value));
+  panel.append(
+    el("div", { class: "toolbar toolbar--filters" }, [usagePeriodToggle(period, (k) => { state.usagePeriod = k; renderUsageOverview(); }), el("span", { class: "cell-muted", style: "margin-left:auto;" }, "Chat figures are all-time — chat history doesn't yet carry dates")]),
+    el("div", { class: "stat-grid stat-grid--4" }, [
+      statCard("Member orgs active", `${USAGE_MEMBER_ORGS.length - none.length} / ${USAGE_MEMBER_ORGS.length}`, `Used at least one tool · ${pLabel.toLowerCase()}`, ""),
+      statCard("Using Handbook + Doc Generator", both, "Member orgs using both", "accent-teal"),
+      statCard("Handbook sessions", hb.sessions.toLocaleString(), pLabel, ""),
+      statCard("Documents generated", dg.generated.toLocaleString(), pLabel, "accent-orange"),
+    ]),
+    el("div", { class: "usage-tools" }, [
+      tool("Chat", "AI assistant used by AMCA staff.", "usage-chat", [["Chats", ch.chats.toLocaleString(), "All time"], ["Messages", ch.messages.toLocaleString(), "All time"], ["Staff using it", `${ch.users} / ${USERS.length}`, null]]),
+      tool("Handbook", "Member handbook readership.", "usage-handbook", [["Sessions", hb.sessions.toLocaleString(), pLabel], ["Unique readers", hb.readers.toLocaleString(), null], ["Member orgs", `${active(hb.orgs)} / ${hb.orgs.length}`, null]]),
+      tool("Document Generator", "SWMS and safety documents members create.", "usage-docgen", [["Generated", dg.generated.toLocaleString(), pLabel], ["Downloaded", dg.downloaded.toLocaleString(), `${Math.round((dg.downloaded / dg.generated) * 100)}% of generated`], ["Member orgs", `${active(dg.orgs)} / ${dg.orgs.length}`, null]]),
+    ]),
+    none.length ? el("div", { class: "panel" }, [
+      el("div", { class: "panel__head" }, [el("h2", {}, "Member organisations not using any tool"), el("span", { class: "cell-muted" }, pLabel)]),
+      el("p", { class: "panel__intro" }, "Worth a check-in from the membership team."),
+      el("div", { class: "chip-list" }, none.map((o) => el("span", { class: "badge badge-warning" }, `${o.name} · ${o.state}`))),
+    ]) : null,
+  );
+}
 function renderDocGenUsage(targetId) {
   const panel = byId(targetId);
   const period = state.docgenPeriod || "90d";
@@ -2787,7 +2873,6 @@ function renderDocGenUsage(targetId) {
   const g = bucketSeries(genDaily, period), d = bucketSeries(dlDaily, period);
 
   panel.append(
-    appLaunchBanner({ title: "Open the Document Generator", text: "Members generate SWMS and safety documents in the Document Generator app, which is being built separately. This will redirect there once it's connected.", cta: "Open Document Generator ↗", url: "docs.amca.com.au" }),
     el("div", { class: "toolbar toolbar--filters" }, [usagePeriodToggle(period, (k) => { state.docgenPeriod = k; renderDocGenUsage(targetId); })]),
     el("div", { class: "stat-grid stat-grid--5" }, [
       statCard("Documents generated", generated.toLocaleString(), USAGE_PERIODS.find((p) => p[0] === period)[1], ""),
@@ -3021,26 +3106,16 @@ function openInviteForm() {
   panel.style.display = "block";
   name.focus();
 }
-function renderUsersUsage() {
-  const grid = byId("users-usage-grid");
-  grid.innerHTML = "";
-  const totalChats = USERS.reduce((s, u) => s + (u.chats || 0), 0);
-  const totalMessages = USERS.reduce((s, u) => s + (u.messages || 0), 0);
-  const totalDocs = USERS.reduce((s, u) => s + (u.documentsGenerated || 0), 0);
-  grid.append(
-    statCard("Total chats", totalChats, "Across all users", ""),
-    statCard("Messages sent", totalMessages, "Across all users", "accent-teal"),
-    statCard("Documents generated", totalDocs, "Across all users", "accent-orange"),
-    statCard("Active users", USERS.filter((u) => u.status === "Active").length, `of ${USERS.length} total`, "")
-  );
+function renderChatUsage() {
   renderToolUsagePanel("usage-ai-assist", TOOL_USAGE.aiAssist);
-  renderToolUsagePanel("usage-doc-generator", TOOL_USAGE.docGenerator);
   renderFeedbackAnalysis();
 }
-function switchUsageTab(tab) {
-  document.querySelectorAll("#usage-tabs .doc-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.usagetab === tab));
-  byId("usage-tab-chat").classList.toggle("active", tab === "chat");
-  byId("usage-tab-docgen").classList.toggle("active", tab === "docgen");
+function chatTotals() {
+  return {
+    chats: USERS.reduce((s, u) => s + (u.chats || 0), 0),
+    messages: USERS.reduce((s, u) => s + (u.messages || 0), 0),
+    users: USERS.filter((u) => (u.chats || 0) > 0).length,
+  };
 }
 function orgUsageBreakdown(totalProjects) {
   const weighted = ORGANIZATIONS.filter((o) => o.users > 0);
@@ -3552,7 +3627,10 @@ function setAppMode(mode) {
 // --------------------------------------------------------------------- init
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".mode-toggle__btn").forEach((btn) => btn.addEventListener("click", () => setAppMode(btn.dataset.appmode)));
-  document.querySelectorAll(".sidebar__nav .nav-btn").forEach((btn) => btn.addEventListener("click", () => showView(btn.dataset.view)));
+  document.querySelectorAll(".sidebar__nav .nav-btn").forEach((btn) => btn.addEventListener("click", () => {
+    if (btn.dataset.subtab) state.subtab[btn.dataset.view] = btn.dataset.subtab;
+    showView(btn.dataset.view);
+  }));
   document.querySelectorAll(".settings-popover button").forEach((btn) => btn.addEventListener("click", () => showView(btn.dataset.view)));
   document.querySelectorAll("[data-goto]").forEach((btn) => btn.addEventListener("click", () => {
     const sub = btn.dataset.gotoSubtab;
@@ -3564,8 +3642,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (b1) { const section = b1.closest(".subtabs").dataset.section; switchSubtab(section, b1.dataset.subtab); }
     const b2 = e.target.closest(".subtab-btn2");
     if (b2) switchSubtab("renewal", b2.dataset.subtab2);
-    const b3 = e.target.closest("[data-usagetab]");
-    if (b3) switchUsageTab(b3.dataset.usagetab);
   });
   byId("settings-gear").addEventListener("click", toggleSettingsPopover);
   document.addEventListener("click", closeSettingsPopover);
