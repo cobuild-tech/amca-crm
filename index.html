@@ -63,7 +63,6 @@
           <button data-view="pipelinestages">Pipeline Stages</button>
           <button data-view="formfields">Enquiry &amp; Follow-up Forms</button>
           <button data-view="automation">Automation Settings</button>
-          <button data-view="doctemplates">Document Templates</button>
           <button data-view="integrations">Integrations</button>
         </div>
       </div>
@@ -133,7 +132,7 @@
       </div>
       <div class="grid-2">
         <div class="panel">
-          <div class="panel__head"><h2>Platform usage</h2><a class="link-btn" data-goto="users" data-goto-subtab="users-usage">Open usage →</a></div>
+          <div class="panel__head"><h2>Platform usage</h2><a class="link-btn" data-goto="cms" data-goto-subtab="cms-usage">Open usage →</a></div>
           <div id="dashboard-usage" class="stat-grid"></div>
         </div>
         <div class="panel">
@@ -152,11 +151,11 @@
       </div>
     </section>
 
-    <!-- MEMBERS (Pipeline / Renewals / Directory / Benefits / Documents / Handbook) -->
+    <!-- MEMBERS (Pipeline / Renewals / Directory / Benefits / Documents) -->
     <section class="view" id="view-members" data-view="members">
       <div class="view-head">
         <h1>Members</h1>
-        <p>Everything about being, and becoming, a member — the pipeline, renewals, directory, benefits, generated documents, and the handbook entry point.</p>
+        <p>Everything about being, and becoming, a member — the pipeline, renewals, directory, benefits and generated documents.</p>
       </div>
       <div class="subtabs" data-section="members">
         <button class="subtab-btn" data-subtab="members-pipeline">Pipeline</button>
@@ -164,7 +163,6 @@
         <button class="subtab-btn" data-subtab="members-directory">Directory</button>
         <button class="subtab-btn" data-subtab="members-benefits">Benefits</button>
         <button class="subtab-btn" data-subtab="members-documents">Documents</button>
-        <button class="subtab-btn" data-subtab="members-handbook">Handbook</button>
       </div>
 
       <div id="members-pipeline" class="subtab-panel">
@@ -214,9 +212,6 @@
         <div id="docgen-reviews"></div>
       </div>
 
-      <div id="members-handbook" class="subtab-panel">
-        <div id="handbook-panel"></div>
-      </div>
     </section>
 
     <!-- NON-MEMBERS (Contacts / Lists / Campaigns) -->
@@ -278,32 +273,26 @@
       </div>
     </aside>
 
-    <!-- NEWSLETTER (Send / History / Subscribers / Unsubscribe Page) -->
+    <!-- NEWSLETTER (History / Compose & Send / Subscribers / Unsubscribe Page) -->
     <section class="view" id="view-newsletter" data-view="newsletter">
       <div class="view-head">
         <h1>Newsletter</h1>
         <p>The combined send — members, non-member lists, and site subscribers together — plus subscriber management and the public unsubscribe page.</p>
       </div>
       <div class="subtabs" data-section="newsletter">
-        <button class="subtab-btn" data-subtab="newsletter-send">Send</button>
         <button class="subtab-btn" data-subtab="newsletter-history">History &amp; Analytics</button>
+        <button class="subtab-btn" data-subtab="newsletter-send">Compose &amp; Send</button>
         <button class="subtab-btn" data-subtab="newsletter-subscribers">Subscribers</button>
         <button class="subtab-btn" data-subtab="newsletter-unsub">Unsubscribe Page</button>
       </div>
 
-      <div id="newsletter-send" class="subtab-panel">
-        <div class="panel">
-          <div class="panel__head"><h2>Compose</h2></div>
-          <div id="campaign-builder" class="campaign-builder"></div>
-        </div>
+      <div id="newsletter-history" class="subtab-panel">
+        <div id="newsletter-history-body"></div>
       </div>
 
-      <div id="newsletter-history" class="subtab-panel">
-        <div id="campaign-summary-strip" class="stat-grid stat-grid--5"></div>
-        <div class="panel">
-          <div class="panel__head"><h2>All campaign history &amp; analytics</h2></div>
-          <div id="campaigns-table" class="data-table"></div>
-        </div>
+      <div id="newsletter-send" class="subtab-panel">
+        <div class="panel__head"><h2 id="newsletter-compose-title">New newsletter</h2></div>
+        <div id="campaign-builder" class="campaign-builder"></div>
       </div>
 
       <div id="newsletter-subscribers" class="subtab-panel">
@@ -355,10 +344,56 @@
     <section class="view" id="view-cms" data-view="cms">
       <div class="view-head">
         <h1>Website</h1>
-        <p>Everything published to amca.com.au — guides, blog, banners, awards, initiatives, impact updates and careers. Events, Training and the Handbook are managed in their own tabs.</p>
+        <p>Everything published to amca.com.au — guides, blog, banners, awards, initiatives, impact updates and careers — plus how the site's tools are being used. Events, Training and the Handbook are managed in their own tabs.</p>
       </div>
       <div class="subtabs" id="cms-subtabs" data-section="cms"></div>
-      <div id="cms-panels"></div>
+      <div id="cms-panels">
+      <div id="cms-usage" class="subtab-panel">
+        <p class="subtab-intro">How staff and members use the website tools — chat assistant and document generator.</p>
+        <div id="users-usage-grid" class="stat-grid"></div>
+        <div class="subtabs subtabs--nested" id="usage-tabs">
+          <button class="doc-tab-btn active" data-usagetab="chat">Chat</button>
+          <button class="doc-tab-btn" data-usagetab="docgen">Document Generator</button>
+        </div>
+
+        <div id="usage-tab-chat" class="usage-tab-panel active">
+          <div class="panel">
+            <div class="panel__head"><h2>Chat Usage</h2></div>
+            <div id="usage-ai-assist"></div>
+          </div>
+          <div class="panel">
+            <div class="panel__head"><h2>Chat Feedback</h2></div>
+            <p class="cell-muted" style="margin-bottom:10px;">Review user feedback and comments on chats to improve answer quality.</p>
+            <div class="toolbar" id="feedback-range-toolbar" style="justify-content:flex-end;"></div>
+            <div id="feedback-stats" class="stat-grid"></div>
+            <div class="panel" style="margin-top:14px;">
+              <div class="panel__head"><h2>Recent feedback</h2></div>
+              <p class="cell-muted" style="margin-bottom:10px;">Question, answer, and who raised it — for the current filters and date range.</p>
+              <div id="feedback-recent"></div>
+            </div>
+            <div class="grid-2">
+              <div class="panel">
+                <div class="panel__head"><h2>Top 10 topics</h2></div>
+                <p class="cell-muted" style="margin-bottom:10px;">Most common subjects people are asking questions about.</p>
+                <div id="feedback-topics" class="mini-list"></div>
+              </div>
+              <div class="panel">
+                <div class="panel__head"><h2>Top 10 sources</h2></div>
+                <p class="cell-muted" style="margin-bottom:10px;">Documents most referenced in rated answers.</p>
+                <div id="feedback-sources" class="mini-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="usage-tab-docgen" class="usage-tab-panel">
+          <div class="panel">
+            <div class="panel__head"><h2>Document Generator Usage</h2></div>
+            <div id="usage-doc-generator"></div>
+          </div>
+        </div>
+      </div>
+      </div>
     </section>
 
     <!-- AUTOMATION SETTINGS (via gear) -->
@@ -460,57 +495,13 @@
         <h1>User Management</h1>
         <p>CRM staff seats and roles — separate from member portal logins.</p>
       </div>
-      <div class="subtabs" data-section="users">
-        <button class="subtab-btn" data-subtab="users-members">Members</button>
-        <button class="subtab-btn" data-subtab="users-usage">Usage</button>
+      <div class="toolbar">
+        <input type="search" id="users-search" placeholder="Search name, email or role…" />
+        <span class="cell-muted" id="users-count" style="align-self:center;"></span>
+        <button class="btn btn-primary" id="user-invite-btn" style="margin-left:auto;">+ Invite user</button>
       </div>
-      <div id="users-members" class="subtab-panel">
-        <div id="users-table" class="data-table"></div>
-      </div>
-      <div id="users-usage" class="subtab-panel">
-        <div id="users-usage-grid" class="stat-grid"></div>
-        <div class="subtabs subtabs--nested" id="usage-tabs">
-          <button class="doc-tab-btn active" data-usagetab="chat">Chat</button>
-          <button class="doc-tab-btn" data-usagetab="docgen">Document Generator</button>
-        </div>
-
-        <div id="usage-tab-chat" class="usage-tab-panel active">
-          <div class="panel">
-            <div class="panel__head"><h2>Chat Usage</h2></div>
-            <div id="usage-ai-assist"></div>
-          </div>
-          <div class="panel">
-            <div class="panel__head"><h2>Chat Feedback</h2></div>
-            <p class="cell-muted" style="margin-bottom:10px;">Review user feedback and comments on chats to improve answer quality.</p>
-            <div class="toolbar" id="feedback-range-toolbar" style="justify-content:flex-end;"></div>
-            <div id="feedback-stats" class="stat-grid"></div>
-            <div class="panel" style="margin-top:14px;">
-              <div class="panel__head"><h2>Recent feedback</h2></div>
-              <p class="cell-muted" style="margin-bottom:10px;">Question, answer, and who raised it — for the current filters and date range.</p>
-              <div id="feedback-recent"></div>
-            </div>
-            <div class="grid-2">
-              <div class="panel">
-                <div class="panel__head"><h2>Top 10 topics</h2></div>
-                <p class="cell-muted" style="margin-bottom:10px;">Most common subjects people are asking questions about.</p>
-                <div id="feedback-topics" class="mini-list"></div>
-              </div>
-              <div class="panel">
-                <div class="panel__head"><h2>Top 10 sources</h2></div>
-                <p class="cell-muted" style="margin-bottom:10px;">Documents most referenced in rated answers.</p>
-                <div id="feedback-sources" class="mini-list"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div id="usage-tab-docgen" class="usage-tab-panel">
-          <div class="panel">
-            <div class="panel__head"><h2>Document Generator Usage</h2></div>
-            <div id="usage-doc-generator"></div>
-          </div>
-        </div>
-      </div>
+      <div id="user-invite-panel" class="panel" style="display:none;"></div>
+      <div id="users-table" class="data-table"></div>
     </section>
 
     <!-- ORGANIZATIONS (Platform view) -->
@@ -604,6 +595,16 @@
 </aside>
 
 <!-- Document detail drawer -->
+<!-- Per-newsletter report (Newsletter → History, Non-Members → Campaigns) -->
+<div id="campaign-report-overlay" class="drawer-overlay"></div>
+<aside id="campaign-report-drawer" class="drawer drawer--wide">
+  <div class="drawer__head">
+    <h2 id="campaign-report-title">Newsletter report</h2>
+    <button id="campaign-report-close" class="icon-btn" aria-label="Close">✕</button>
+  </div>
+  <div id="campaign-report-body" class="drawer__body"></div>
+</aside>
+
 <div id="doc-detail-drawer-overlay" class="drawer-overlay"></div>
 <aside id="doc-detail-drawer" class="drawer">
   <div class="drawer__head">

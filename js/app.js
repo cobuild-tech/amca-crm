@@ -35,8 +35,11 @@ const state = {
   appMode: "crm",
   currentUser: CURRENT_USER,
   actionFilter: "mine",
-  subtab: { members: "members-pipeline", nonmembers: "nonmembers-campaigns", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-send", users: "users-members" },
+  subtab: { members: "members-pipeline", nonmembers: "nonmembers-campaigns", renewal: "renewal-board", cms: "cms-guides", newsletter: "newsletter-history" },
   editingBenefitId: null,
+  composeDraftId: null,
+  users: JSON.parse(JSON.stringify(USERS)).map((u, i) => ({ ...u, access: i < 2 ? "Admin" : "Editor" })),
+  newsletterHistory: { period: "12m", audience: "", status: "All" },
   dismissedActions: new Set(),
   actionAssignee: {},
   syncLog: [
@@ -232,7 +235,6 @@ function switchSubtab(section, id) {
     else if (id === "members-directory") renderCompanies();
     else if (id === "members-benefits") renderBenefits();
     else if (id === "members-documents") renderDocGen();
-    else if (id === "members-handbook") renderHandbookPanel();
   } else if (section === "nonmembers") {
     if (id === "nonmembers-contacts") renderNonMemberContacts();
     else if (id === "nonmembers-lists") renderNonMemberListsGrid();
@@ -243,10 +245,8 @@ function switchSubtab(section, id) {
     else if (id === "newsletter-subscribers") renderSubscribers();
     else if (id === "newsletter-unsub") renderUnsubEditor();
   } else if (section === "cms") {
-    renderCmsPanel(id.replace("cms-", ""));
-  } else if (section === "users") {
-    if (id === "users-members") renderUsers();
-    else if (id === "users-usage") renderUsersUsage();
+    if (id === "cms-usage") renderUsersUsage();
+    else renderCmsPanel(id.replace("cms-", ""));
   }
 }
 
@@ -727,7 +727,12 @@ function composerRecipientInfo(selection) {
     subTotal = state.subscribers.length;
     subSendable = state.subscribers.filter((s) => !s.unsubscribed).length;
   }
-  return { total: memberCount + nmContacts.length + subTotal, sendable: memberCount + nmSendable + subSendable, blocked: nmBlocked + (subTotal - subSendable) };
+  return {
+    total: memberCount + nmContacts.length + subTotal,
+    sendable: memberCount + nmSendable + subSendable,
+    blocked: nmBlocked + (subTotal - subSendable),
+    split: { members: memberCount, nonMembers: nmSendable, subscribers: subSendable },
+  };
 }
 function describeSelection(selection) {
   const parts = [];
@@ -746,25 +751,564 @@ function audienceTypeFor(selection) {
   if (flags[2]) return "Subscribers";
   return "None";
 }
-function checkboxRow(label, onchange) {
+function checkboxRow(label, onchange, checked) {
   const box = el("input", { type: "checkbox" });
+  box.checked = !!checked;
   box.addEventListener("change", () => onchange(box.checked, box));
   return { row: el("label", { class: "tier-check" }, [box, " " + label]), box };
 }
+
+// ---------------------------------------------------------- campaign metrics
+// Every rate is derived from raw counts so the table, the summary strip and
+// the per-newsletter report can never disagree with each other.
+function pct(n, d) { return d ? Math.round((n / d) * 1000) / 10 : null; }
+function campaignStats(cm) {
+  if (cm.status !== "Sent") return { sent: false, recipients: cm.recipients || 0 };
+  const bounces = (cm.hardBounces || 0) + (cm.softBounces || 0);
+  const delivered = cm.recipients - bounces;
+  const totalOpens = cm.totalOpens || Math.round(cm.uniqueOpens * 1.62);
+  const totalClicks = cm.totalClicks || Math.round(cm.uniqueClicks * 1.38);
+  return {
+    sent: true,
+    recipients: cm.recipients,
+    delivered,
+    bounces,
+    hardBounces: cm.hardBounces || 0,
+    softBounces: cm.softBounces || 0,
+    uniqueOpens: cm.uniqueOpens,
+    totalOpens,
+    uniqueClicks: cm.uniqueClicks,
+    totalClicks,
+    unsubscribes: cm.unsubscribes || 0,
+    complaints: cm.complaints || 0,
+    deliveryRate: pct(delivered, cm.recipients),
+    bounceRate: pct(bounces, cm.recipients),
+    openRate: pct(cm.uniqueOpens, delivered),
+    clickRate: pct(cm.uniqueClicks, delivered),
+    ctor: pct(cm.uniqueClicks, cm.uniqueOpens),
+    unsubRate: pct(cm.unsubscribes || 0, delivered),
+    complaintRate: pct(cm.complaints || 0, delivered),
+  };
+}
+function fmtPct(v) { return v == null ? "—" : (Number.isInteger(v) ? v : v.toFixed(1)) + "%"; }
+// Deterministic pseudo-random so a campaign's generated detail is stable
+// across re-renders (mock data only — Mailchimp supplies the real thing).
+function seededRandom(seedStr) {
+  let h = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return () => { h += 0x6d2b79f5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+// Cumulative unique opens/clicks for the first 7 days after send.
+const ENGAGEMENT_DECAY = [0.58, 0.19, 0.09, 0.05, 0.04, 0.03, 0.02];
+function campaignEngagementCurve(cm) {
+  const st = campaignStats(cm);
+  let o = 0, c = 0;
+  return ENGAGEMENT_DECAY.map((share, i) => {
+    o += share; c += share;
+    return { label: "Day " + (i + 1), opens: Math.round(st.uniqueOpens * Math.min(o, 1)), clicks: Math.round(st.uniqueClicks * Math.min(c, 1)) };
+  });
+}
+function campaignAudienceSplit(cm) {
+  const st = campaignStats(cm);
+  const shares = cm.audience === "Members" ? [1, 0, 0] : cm.audience === "Non-members" ? [0, 1, 0] : cm.audience === "Subscribers" ? [0, 0, 1] : [0.78, 0.15, 0.07];
+  const lift = [1.18, 0.82, 0.9];
+  return [["Members", 0], ["Non-members", 1], ["Site subscribers", 2]]
+    .filter(([, i]) => shares[i] > 0)
+    .map(([label, i]) => {
+      const delivered = Math.round(st.delivered * shares[i]);
+      const openRate = Math.min(95, Math.round((st.openRate * (shares[i] === 1 ? 1 : lift[i])) * 10) / 10);
+      return { label, delivered, openRate, clickRate: Math.round(openRate * (st.ctor / 100) * 10) / 10 };
+    });
+}
+function campaignRecipientSample(cm) {
+  const rnd = seededRandom(cm.id);
+  const people = [];
+  state.companies.filter((c) => c.memberState === "active").forEach((c) => c.people.forEach((p) => people.push({ name: p.name, email: p.email, org: c.name, group: "Members" })));
+  state.nonMembers.forEach((n) => people.push({ name: n.contact, email: n.email, org: n.name, group: "Non-members" }));
+  state.subscribers.forEach((s) => people.push({ name: s.name, email: s.email, org: "Site subscriber", group: "Site subscribers" }));
+  const allowed = cm.audience === "Mixed" ? null : cm.audience === "Subscribers" ? "Site subscribers" : cm.audience;
+  const pool = people.filter((p) => !allowed || p.group === allowed);
+  const st = campaignStats(cm);
+  const sendDay = new Date(cm.sentDate + "T" + (cm.sendTime || "09:00"));
+  return pool.slice(0, 12).map((p) => {
+    const r = rnd();
+    let status, mins;
+    if (r < st.bounceRate / 100 * 3) { status = "Bounced"; mins = 1; }
+    else if (r < (st.bounceRate / 100 * 3) + 0.04) { status = "Unsubscribed"; mins = 30 + Math.floor(rnd() * 600); }
+    else if (r < st.clickRate / 100 + 0.08) { status = "Clicked"; mins = 5 + Math.floor(rnd() * 900); }
+    else if (r < st.openRate / 100 + 0.1) { status = "Opened"; mins = 5 + Math.floor(rnd() * 2400); }
+    else { status = "Not opened"; mins = null; }
+    const at = mins == null ? null : new Date(sendDay.getTime() + mins * 60000);
+    return { ...p, status, at, opens: status === "Clicked" || status === "Opened" ? 1 + Math.floor(rnd() * 4) : 0 };
+  });
+}
+function fmtDateTime(d) {
+  if (!d) return "—";
+  return fmtDate(d.toISOString().slice(0, 10)) + " " + d.toTimeString().slice(0, 5);
+}
+function campaignStatusBadge(status) {
+  const cls = { Sent: "badge-success", Scheduled: "badge-orange", Draft: "badge-neutral", Sending: "badge-teal" }[status] || "badge-neutral";
+  return el("span", { class: "badge " + cls }, status);
+}
+
+// -------------------------------------------------------------- line chart
+// A small, dependency-free SVG line chart: one y-axis, 2px lines, end-of-line
+// direct labels, legend, and a crosshair + tooltip on hover.
+function lineChart({ labels, series, yFormat = (v) => v, yMax, height = 220, tooltipTitle }) {
+  const W = 640, H = height, pad = { l: 44, r: 92, t: 14, b: 30 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const maxVal = yMax || Math.max(1, ...series.flatMap((s) => s.values.filter((v) => v != null)));
+  const tickStep = (() => { const raw = maxVal / 4, p = Math.pow(10, Math.floor(Math.log10(raw))); return [1, 2, 2.5, 5, 10].map((m) => m * p).find((st) => st >= raw); })();
+  const ticks = Math.ceil(maxVal / tickStep);
+  const niceMax = tickStep * ticks;
+  const x = (i) => pad.l + (labels.length === 1 ? iw / 2 : (i / (labels.length - 1)) * iw);
+  const y = (v) => pad.t + ih - (v / niceMax) * ih;
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("class", "chart-svg");
+  svg.setAttribute("role", "img");
+  const mk = (tag, attrs, text) => { const n = document.createElementNS(ns, tag); Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v)); if (text != null) n.textContent = text; svg.appendChild(n); return n; };
+
+  for (let i = 0; i <= ticks; i++) {
+    const v = tickStep * i;
+    mk("line", { x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v), class: i === 0 ? "chart-axis" : "chart-grid" });
+    mk("text", { x: pad.l - 8, y: y(v) + 4, "text-anchor": "end", class: "chart-tick" }, yFormat(Math.round(v * 10) / 10));
+  }
+  const step = Math.ceil(labels.length / 8);
+  labels.forEach((lab, i) => {
+    if (i % step === 0 || i === labels.length - 1) mk("text", { x: x(i), y: H - 8, "text-anchor": "middle", class: "chart-tick" }, lab);
+  });
+  const endLabels = [];
+  series.forEach((s) => {
+    const pts = s.values.map((v, i) => (v == null ? null : [x(i), y(v)])).filter(Boolean);
+    if (pts.length > 1) mk("path", { d: pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" "), class: "chart-line", stroke: s.color });
+    pts.forEach((p) => mk("circle", { cx: p[0], cy: p[1], r: 3.5, fill: s.color, class: "chart-dot" }));
+    const last = pts[pts.length - 1];
+    if (last) endLabels.push({ y: last[1], x: last[0], text: s.name, color: s.color });
+  });
+  endLabels.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < endLabels.length; i++) if (endLabels[i].y - endLabels[i - 1].y < 14) endLabels[i].y = endLabels[i - 1].y + 14;
+  endLabels.forEach((l) => {
+    mk("circle", { cx: l.x + 10, cy: l.y - 4, r: 4, fill: l.color });
+    mk("text", { x: l.x + 18, y: l.y, class: "chart-direct-label" }, l.text);
+  });
+
+  const cross = mk("line", { x1: 0, x2: 0, y1: pad.t, y2: pad.t + ih, class: "chart-crosshair", visibility: "hidden" });
+  const hit = mk("rect", { x: pad.l - 10, y: 0, width: iw + 20, height: H, fill: "transparent" });
+  const wrap = el("div", { class: "chart" });
+  const tip = el("div", { class: "chart-tip" });
+  const legend = el("div", { class: "chart-legend" }, series.map((s) => el("span", { class: "chart-legend__item" }, [el("span", { class: "chart-legend__swatch", style: `background:${s.color}` }), s.name])));
+  if (series.length > 1) wrap.append(legend);
+  wrap.append(svg, tip);
+  const move = (evt) => {
+    const rect = svg.getBoundingClientRect();
+    const px = ((evt.clientX - rect.left) / rect.width) * W;
+    let idx = labels.length === 1 ? 0 : Math.round(((px - pad.l) / iw) * (labels.length - 1));
+    idx = Math.max(0, Math.min(labels.length - 1, idx));
+    cross.setAttribute("x1", x(idx)); cross.setAttribute("x2", x(idx)); cross.setAttribute("visibility", "visible");
+    tip.innerHTML = "";
+    tip.append(el("div", { class: "chart-tip__title" }, tooltipTitle ? tooltipTitle(idx) : labels[idx]));
+    series.forEach((s) => tip.append(el("div", { class: "chart-tip__row" }, [el("span", { class: "chart-legend__swatch", style: `background:${s.color}` }), el("span", {}, s.name), el("strong", {}, s.values[idx] == null ? "—" : yFormat(s.values[idx]))])));
+    tip.style.display = "block";
+    const left = (x(idx) / W) * rect.width;
+    tip.style.left = Math.min(Math.max(left + 12, 0), rect.width - 200) + "px";
+    tip.style.top = "8px";
+  };
+  hit.addEventListener("mousemove", move);
+  hit.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+  return wrap;
+}
+const CHART_COLORS = { primary: "#0072ae", secondary: "#f47920" };
+
+// ------------------------------------------------------- history & analytics
+const NEWSLETTER_PERIODS = [["3m", "Last 3 months", 3], ["6m", "Last 6 months", 6], ["12m", "Last 12 months", 12], ["all", "All time", null]];
+function campaignsInPeriod(periodKey, audienceFilter) {
+  const months = NEWSLETTER_PERIODS.find((p) => p[0] === periodKey)?.[2];
+  const cutoff = months ? new Date(new Date(TODAY).setMonth(new Date(TODAY).getMonth() - months)).toISOString().slice(0, 10) : "0000";
+  return state.campaigns.filter((cm) => cm.status === "Sent" && cm.sentDate >= cutoff && (!audienceFilter || cm.audience === audienceFilter));
+}
+function aggregateStats(rows) {
+  const t = rows.map(campaignStats).reduce((a, s) => {
+    ["recipients", "delivered", "bounces", "uniqueOpens", "uniqueClicks", "unsubscribes", "complaints"].forEach((k) => { a[k] = (a[k] || 0) + s[k]; });
+    return a;
+  }, {});
+  return { ...t, sends: rows.length, deliveryRate: pct(t.delivered, t.recipients), openRate: pct(t.uniqueOpens, t.delivered), clickRate: pct(t.uniqueClicks, t.delivered), ctor: pct(t.uniqueClicks, t.uniqueOpens), unsubRate: pct(t.unsubscribes, t.delivered) };
+}
+function renderCampaignSummary(container, audienceFilter, periodKey = "all") {
+  if (!container) return;
+  container.innerHTML = "";
+  const rows = campaignsInPeriod(periodKey, audienceFilter);
+  const a = aggregateStats(rows);
+  const periodLabel = NEWSLETTER_PERIODS.find((p) => p[0] === periodKey)?.[1] || "All time";
+  container.append(
+    statCard("Campaigns sent", rows.length, periodLabel, ""),
+    statCard("Delivered", (a.delivered || 0).toLocaleString(), `${fmtPct(a.deliveryRate)} delivery rate`, "accent-teal"),
+    statCard("Open rate", fmtPct(a.openRate), `${(a.uniqueOpens || 0).toLocaleString()} unique opens`, ""),
+    statCard("Click rate", fmtPct(a.clickRate), `${fmtPct(a.ctor)} click-to-open`, "accent-orange"),
+    statCard("Unsubscribes", a.unsubscribes || 0, `${fmtPct(a.unsubRate)} · ${a.complaints || 0} spam complaints`, "")
+  );
+}
+function renderCampaignsTable(wrap, audienceFilter, opts = {}) {
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  const table = el("table", {}, [
+    el("thead", {}, el("tr", {}, ["Newsletter", "Audience", "Sent / scheduled", "Recipients", "Delivered", "Open rate", "Click rate", "CTOR", "Unsubs", "Bounces", "Status"].map((h) => el("th", {}, h)))),
+  ]);
+  const tbody = el("tbody");
+  state.campaigns
+    .filter((cm) => (!audienceFilter || cm.audience === audienceFilter) && (!opts.status || opts.status === "All" || cm.status === opts.status))
+    .sort((a, b) => (a.sentDate < b.sentDate ? 1 : -1))
+    .forEach((cm) => {
+      const st = campaignStats(cm);
+      const rate = (v, kind) => (st.sent ? el("span", { class: "badge " + rateClass(v, kind) }, fmtPct(v)) : el("span", { class: "cell-muted" }, "—"));
+      tbody.appendChild(el("tr", { class: "clickable", onclick: () => (cm.status === "Draft" ? openDraftInComposer(cm.id) : openCampaignReport(cm.id)) }, [
+        el("td", { class: "cell-primary" }, [el("div", {}, cm.name), cm.internalName && cm.internalName !== cm.name ? el("div", { class: "cell-sub" }, cm.internalName) : null]),
+        el("td", {}, el("span", { class: "badge badge-navy" }, cm.audience)),
+        el("td", {}, [el("div", {}, fmtDate(cm.sentDate)), el("div", { class: "cell-sub" }, (cm.sendTime || "") + " AEST")]),
+        el("td", {}, st.recipients ? st.recipients.toLocaleString() : "—"),
+        el("td", {}, rate(st.deliveryRate, "delivered")),
+        el("td", {}, rate(st.openRate, "open")),
+        el("td", {}, rate(st.clickRate, "click")),
+        el("td", { class: "cell-muted" }, st.sent ? fmtPct(st.ctor) : "—"),
+        el("td", { class: "cell-muted" }, st.sent ? String(st.unsubscribes) : "—"),
+        el("td", { class: "cell-muted" }, st.sent ? String(st.bounces) : "—"),
+        el("td", {}, campaignStatusBadge(cm.status)),
+      ]));
+    });
+  if (!tbody.children.length) tbody.appendChild(el("tr", {}, el("td", { colspan: "11", class: "cell-muted" }, "No campaigns match.")));
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+function rateClass(rate, kind) {
+  if (rate == null) return "badge-neutral";
+  if (kind === "open") return rate >= 45 ? "badge-success" : rate >= 25 ? "badge-warning" : "badge-danger";
+  if (kind === "click") return rate >= 15 ? "badge-success" : rate >= 7 ? "badge-warning" : "badge-danger";
+  return rate >= 97 ? "badge-success" : "badge-warning";
+}
+function newsletterActivityFeed(rows) {
+  const events = [];
+  const unsubPool = state.subscribers.concat(state.nonMembers.map((n) => ({ name: n.contact })));
+  rows.forEach((cm) => {
+    const st = campaignStats(cm);
+    const rnd = seededRandom(cm.id + "feed");
+    events.push({ date: cm.sentDate, type: "send", text: `Sent "${cm.name}" to ${st.recipients.toLocaleString()} recipients (${cm.segment})` });
+    const day1 = Math.round(st.uniqueOpens * ENGAGEMENT_DECAY[0]);
+    events.push({ date: cm.sentDate, type: "open", text: `${day1.toLocaleString()} opened "${cm.name}" in the first 24 hours` });
+    const top = (cm.links || [])[0];
+    if (top) events.push({ date: cm.sentDate, type: "click", text: `Top link: "${top[0]}" — ${Math.round(st.totalClicks * top[2]).toLocaleString()} clicks` });
+    if (st.hardBounces >= 15) events.push({ date: cm.sentDate, type: "bounce", text: `${st.hardBounces} hard bounces on "${cm.name}" — addresses suppressed` });
+    const start = Math.floor(rnd() * unsubPool.length);
+    for (let i = 0; i < Math.min(2, st.unsubscribes); i++) {
+      const who = unsubPool[(start + i) % unsubPool.length];
+      events.push({ date: cm.sentDate, type: "unsub", text: `${who.name} unsubscribed via "${cm.name}"` });
+    }
+    if (st.complaints) events.push({ date: cm.sentDate, type: "complaint", text: `${st.complaints} spam complaint${st.complaints === 1 ? "" : "s"} on "${cm.name}"` });
+  });
+  return events.sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+const ACTIVITY_ICONS = { send: "✉", open: "◉", click: "↗", bounce: "⚠", unsub: "⊘", complaint: "⚑" };
+function renderNewsletterHistory() {
+  const host = byId("newsletter-history-body");
+  const ui = state.newsletterHistory;
+  host.innerHTML = "";
+
+  const periodSel = el("div", { class: "segmented" }, NEWSLETTER_PERIODS.map(([key, label]) =>
+    el("button", { class: "segmented__btn" + (ui.period === key ? " active" : ""), onclick: () => { ui.period = key; renderNewsletterHistory(); } }, label)));
+  const audienceSel = el("select", { onchange: (e) => { ui.audience = e.target.value; renderNewsletterHistory(); } },
+    [["", "All audiences"], ["Members", "Members"], ["Non-members", "Non-members"], ["Mixed", "Mixed"], ["Subscribers", "Subscribers"]].map(([v, l]) => {
+      const o = el("option", { value: v }, l); if (v === ui.audience) o.selected = true; return o;
+    }));
+  host.append(el("div", { class: "toolbar toolbar--filters" }, [periodSel, audienceSel,
+    el("button", { class: "btn btn-primary", style: "margin-left:auto;", onclick: () => { state.composeDraftId = null; switchSubtab("newsletter", "newsletter-send"); } }, "+ New newsletter")]));
+
+  const summary = el("div", { class: "stat-grid stat-grid--5" });
+  host.append(summary);
+  renderCampaignSummary(summary, ui.audience || null, ui.period);
+
+  const rows = campaignsInPeriod(ui.period, ui.audience || null).sort((a, b) => (a.sentDate > b.sentDate ? 1 : -1));
+  const chartPanel = el("div", { class: "panel" }, [
+    el("div", { class: "panel__head" }, [el("h2", {}, "Engagement per send"), el("span", { class: "cell-muted" }, "Unique open and click rate of each newsletter, oldest → newest")]),
+  ]);
+  if (rows.length) {
+    const stats = rows.map(campaignStats);
+    chartPanel.append(lineChart({
+      labels: rows.map((cm) => fmtDate(cm.sentDate).replace(/ 20\d\d$/, "")),
+      series: [
+        { name: "Open rate", color: CHART_COLORS.primary, values: stats.map((s) => s.openRate) },
+        { name: "Click rate", color: CHART_COLORS.secondary, values: stats.map((s) => s.clickRate) },
+      ],
+      yFormat: (v) => v + "%",
+      tooltipTitle: (i) => `${rows[i].name} · ${fmtDate(rows[i].sentDate)}`,
+    }));
+  } else chartPanel.append(el("p", { class: "cell-muted" }, "No sends in this period."));
+
+  const feed = newsletterActivityFeed(rows).slice(0, 14);
+  const feedPanel = el("div", { class: "panel" }, [
+    el("div", { class: "panel__head" }, [el("h2", {}, "Activity"), el("span", { class: "cell-muted" }, NEWSLETTER_PERIODS.find((p) => p[0] === ui.period)[1])]),
+    feed.length ? el("div", { class: "nl-feed" }, feed.map((e) => el("div", { class: "nl-feed__row nl-feed__row--" + e.type }, [
+      el("span", { class: "nl-feed__icon", "aria-hidden": "true" }, ACTIVITY_ICONS[e.type]),
+      el("div", {}, [el("div", { class: "nl-feed__text" }, e.text), el("div", { class: "cell-sub" }, fmtDate(e.date))]),
+    ]))) : el("p", { class: "cell-muted" }, "No activity in this period."),
+  ]);
+  host.append(el("div", { class: "grid-2 grid-2--wide-left" }, [chartPanel, feedPanel]));
+
+  const statusFilter = el("div", { class: "segmented segmented--sm" }, ["All", "Sent", "Scheduled", "Draft"].map((s) =>
+    el("button", { class: "segmented__btn" + (ui.status === s ? " active" : ""), onclick: () => { ui.status = s; renderNewsletterHistory(); } }, s)));
+  const tableWrap = el("div", { class: "data-table" });
+  host.append(el("div", { class: "panel" }, [
+    el("div", { class: "panel__head" }, [el("h2", {}, "All newsletters"), statusFilter]),
+    el("p", { class: "panel__intro" }, "Click a sent or scheduled newsletter for its full report; click a draft to keep editing it."),
+    tableWrap,
+  ]));
+  renderCampaignsTable(tableWrap, ui.audience || null, { status: ui.status });
+}
+
+// ------------------------------------------------------ per-newsletter report
+function openCampaignReport(id) {
+  const cm = state.campaigns.find((c) => c.id === id);
+  if (!cm) return;
+  const st = campaignStats(cm);
+  byId("campaign-report-title").textContent = cm.name;
+  const body = byId("campaign-report-body");
+  body.innerHTML = "";
+
+  const meta = el("dl", { class: "drawer-kv" }, [
+    el("dt", {}, "Status"), el("dd", {}, campaignStatusBadge(cm.status)),
+    el("dt", {}, cm.status === "Sent" ? "Sent" : "Scheduled for"), el("dd", {}, `${fmtDate(cm.sentDate)}, ${cm.sendTime || NEWSLETTER_DEFAULTS.sendTime} AEST`),
+    el("dt", {}, "From"), el("dd", {}, `${cm.fromName || NEWSLETTER_DEFAULTS.fromName} <${cm.fromEmail || NEWSLETTER_DEFAULTS.fromEmail}>`),
+    el("dt", {}, "Reply-to"), el("dd", {}, cm.replyTo || NEWSLETTER_DEFAULTS.replyTo),
+    el("dt", {}, "Audience"), el("dd", {}, `${cm.audience} — ${cm.segment}`),
+    el("dt", {}, "Preview text"), el("dd", {}, cm.previewText || "—"),
+    el("dt", {}, "Internal name"), el("dd", {}, cm.internalName || "—"),
+  ]);
+  body.append(el("div", { class: "drawer-section" }, [el("h3", {}, "Overview"), meta]));
+
+  if (!st.sent) {
+    body.append(el("div", { class: "drawer-section" }, [
+      el("p", {}, `This newsletter hasn't gone out yet. Approx. ${st.recipients.toLocaleString()} recipients after consent and unsubscribe checks.`),
+      el("div", { class: "campaign-row", style: "margin-top:10px;" }, [
+        el("button", { class: "btn", onclick: () => { cm.status = "Draft"; closeCampaignReport(); openDraftInComposer(cm.id); showToast("Schedule cancelled — moved back to drafts.", "info"); } }, "Cancel schedule & edit"),
+      ]),
+    ]), el("div", { class: "drawer-section" }, [el("h3", {}, "Content"), el("div", { class: "email-preview", html: cm.bodyHtml })]));
+    openReportDrawer();
+    return;
+  }
+
+  const kpi = (label, value, sub) => el("div", { class: "kpi" }, [el("div", { class: "kpi__label" }, label), el("div", { class: "kpi__value" }, value), sub ? el("div", { class: "kpi__sub" }, sub) : null]);
+  body.append(el("div", { class: "drawer-section" }, [el("h3", {}, "Performance"), el("div", { class: "kpi-grid" }, [
+    kpi("Recipients", st.recipients.toLocaleString(), "After consent checks"),
+    kpi("Delivered", fmtPct(st.deliveryRate), `${st.delivered.toLocaleString()} inboxes`),
+    kpi("Open rate", fmtPct(st.openRate), `${st.uniqueOpens.toLocaleString()} unique · ${st.totalOpens.toLocaleString()} total`),
+    kpi("Click rate", fmtPct(st.clickRate), `${st.uniqueClicks.toLocaleString()} unique · ${st.totalClicks.toLocaleString()} total`),
+    kpi("Click-to-open", fmtPct(st.ctor), "Clicks ÷ opens"),
+    kpi("Bounces", String(st.bounces), `${st.hardBounces} hard · ${st.softBounces} soft · ${fmtPct(st.bounceRate)}`),
+    kpi("Unsubscribes", String(st.unsubscribes), fmtPct(st.unsubRate)),
+    kpi("Spam complaints", String(st.complaints), fmtPct(st.complaintRate)),
+  ])]));
+
+  const funnelRows = [["Sent", st.recipients], ["Delivered", st.delivered], ["Opened", st.uniqueOpens], ["Clicked", st.uniqueClicks]];
+  body.append(el("div", { class: "drawer-section" }, [el("h3", {}, "Delivery funnel"), el("div", { class: "funnel" }, funnelRows.map(([label, n]) =>
+    el("div", { class: "funnel-row" }, [
+      el("div", { class: "funnel-row__label" }, label),
+      el("div", { class: "funnel-row__bar-track" }, el("div", { class: "funnel-row__bar", style: `width:${(n / st.recipients) * 100}%` })),
+      el("div", { class: "funnel-row__count funnel-row__count--wide" }, `${n.toLocaleString()} · ${fmtPct(pct(n, st.recipients))}`),
+    ])))]));
+
+  const curve = campaignEngagementCurve(cm);
+  body.append(el("div", { class: "drawer-section" }, [
+    el("h3", {}, "Engagement over the first 7 days"),
+    el("p", { class: "cell-muted", style: "font-size:12.5px;margin-bottom:6px;" }, `Cumulative unique opens and clicks. ${Math.round(ENGAGEMENT_DECAY[0] * 100)}% of opens landed in the first 24 hours.`),
+    lineChart({ labels: curve.map((p) => p.label), series: [
+      { name: "Opens", color: CHART_COLORS.primary, values: curve.map((p) => p.opens) },
+      { name: "Clicks", color: CHART_COLORS.secondary, values: curve.map((p) => p.clicks) },
+    ], yFormat: (v) => Math.round(v).toLocaleString(), height: 200 }),
+  ]));
+
+  const links = cm.links || [];
+  if (links.length) {
+    const linkTable = el("table", {}, [el("thead", {}, el("tr", {}, ["Link", "Clicks", "Share"].map((h) => el("th", {}, h))))]);
+    const tb = el("tbody");
+    links.forEach(([label, url, share]) => tb.append(el("tr", {}, [
+      el("td", {}, [el("div", { class: "cell-primary" }, label), el("div", { class: "cell-sub" }, url)]),
+      el("td", {}, Math.round(st.totalClicks * share).toLocaleString()),
+      el("td", {}, el("div", { class: "share-bar" }, [el("div", { class: "share-bar__fill", style: `width:${share * 100}%` }), el("span", {}, Math.round(share * 100) + "%")])),
+    ])));
+    linkTable.append(tb);
+    body.append(el("div", { class: "drawer-section" }, [el("h3", {}, "Top links"), el("div", { class: "data-table" }, linkTable)]));
+  }
+
+  const split = campaignAudienceSplit(cm);
+  const splitTable = el("table", {}, [el("thead", {}, el("tr", {}, ["Audience group", "Delivered", "Open rate", "Click rate"].map((h) => el("th", {}, h))))]);
+  const sb = el("tbody");
+  split.forEach((g) => sb.append(el("tr", {}, [el("td", { class: "cell-primary" }, g.label), el("td", {}, g.delivered.toLocaleString()),
+    el("td", {}, el("span", { class: "badge " + rateClass(g.openRate, "open") }, fmtPct(g.openRate))),
+    el("td", {}, el("span", { class: "badge " + rateClass(g.clickRate, "click") }, fmtPct(g.clickRate)))])));
+  splitTable.append(sb);
+  body.append(el("div", { class: "drawer-section" }, [el("h3", {}, "By audience group"), el("div", { class: "data-table" }, splitTable)]));
+
+  const sample = campaignRecipientSample(cm);
+  const recTable = el("table", {}, [el("thead", {}, el("tr", {}, ["Recipient", "Group", "Activity", "Opens", "Last activity"].map((h) => el("th", {}, h))))]);
+  const rb = el("tbody");
+  const statusCls = { Clicked: "badge-success", Opened: "badge-teal", "Not opened": "badge-neutral", Bounced: "badge-danger", Unsubscribed: "badge-warning" };
+  sample.forEach((r) => rb.append(el("tr", {}, [
+    el("td", {}, [el("div", { class: "cell-primary" }, r.name), el("div", { class: "cell-sub" }, r.org)]),
+    el("td", { class: "cell-muted" }, r.group),
+    el("td", {}, el("span", { class: "badge " + statusCls[r.status] }, r.status)),
+    el("td", { class: "cell-muted" }, String(r.opens)),
+    el("td", { class: "cell-muted" }, fmtDateTime(r.at)),
+  ])));
+  recTable.append(rb);
+  body.append(el("div", { class: "drawer-section" }, [
+    el("div", { class: "panel__head" }, [el("h3", { style: "margin:0;" }, "Recipient activity"),
+      el("button", { class: "btn btn-sm", onclick: () => showToast(`Exported recipient activity for "${cm.name}" (CSV, ${st.recipients.toLocaleString()} rows).`, "success") }, "Export CSV")]),
+    el("p", { class: "cell-muted", style: "font-size:12.5px;margin-bottom:6px;" }, `Showing ${sample.length} of ${st.recipients.toLocaleString()} recipients.`),
+    el("div", { class: "data-table" }, recTable),
+  ]));
+
+  body.append(el("div", { class: "drawer-section" }, [el("h3", {}, "Content"), el("div", { class: "email-preview", html: cm.bodyHtml })]));
+  body.append(el("div", { class: "campaign-row" }, [
+    el("button", { class: "btn", onclick: () => { duplicateCampaign(cm.id); closeCampaignReport(); } }, "Duplicate as new draft"),
+    el("button", { class: "btn btn-ghost", onclick: () => showToast("Opens the campaign report in Mailchimp (separate system).", "info") }, "Open in Mailchimp"),
+  ]));
+  openReportDrawer();
+}
+function openReportDrawer() {
+  byId("campaign-report-drawer").classList.add("open");
+  byId("campaign-report-overlay").classList.add("open");
+  byId("campaign-report-body").scrollTop = 0;
+}
+function closeCampaignReport() {
+  byId("campaign-report-drawer").classList.remove("open");
+  byId("campaign-report-overlay").classList.remove("open");
+}
+function duplicateCampaign(id) {
+  const src = state.campaigns.find((c) => c.id === id);
+  const copy = {
+    id: genId("cm"), name: src.name + " (copy)", internalName: (src.internalName || src.name) + " (copy)", audience: src.audience, segment: src.segment,
+    sentDate: TODAY, sendTime: src.sendTime, status: "Draft", previewText: src.previewText, bodyHtml: src.bodyHtml,
+    fromName: src.fromName, fromEmail: src.fromEmail, replyTo: src.replyTo, createdBy: state.currentUser?.name,
+  };
+  state.campaigns.unshift(copy);
+  openDraftInComposer(copy.id);
+  showToast(`Draft created from "${src.name}".`, "success");
+}
+function openDraftInComposer(id) {
+  state.composeDraftId = id;
+  if (state.view !== "newsletter") { state.subtab.newsletter = "newsletter-send"; showView("newsletter"); }
+  else switchSubtab("newsletter", "newsletter-send");
+}
+
+// ------------------------------------------------------------------- composer
+const MERGE_TAGS = [["First name", "{{first_name}}"], ["Organisation", "{{company}}"], ["Membership tier", "{{membership_tier}}"], ["Renewal date", "{{renewal_date}}"]];
 function buildCampaignComposer(container, opts) {
   const mode = opts.mode;
+  const draft = opts.draftId ? state.campaigns.find((c) => c.id === opts.draftId) : null;
   container.innerHTML = "";
+  container.classList.toggle("composer--split", mode === "newsletter");
   const selection = { memberCriteria: new Set(), nonMemberLists: new Set(), includeSubscribers: false };
+  const settings = { trackOpens: true, trackClicks: true, utm: true, delivery: "now", previewDevice: "desktop", tests: [] };
+  const field = (label, control, hint) => el("div", { class: "form-row" }, [el("label", {}, label), control, hint || null]);
+  const section = (num, title, children) => el("section", { class: "composer-section" }, [el("h3", { class: "composer-section__title" }, [el("span", { class: "composer-section__num" }, String(num)), title]), ...children]);
 
+  // 1. Setup
+  const internalInput = el("input", { type: "text", placeholder: "e.g. Monthly Update Oct 2026 — only staff see this" });
   const templateSelect = el("select", {}, state.emailTemplates.map((t) => el("option", { value: t.id }, t.name)));
-  const manageBtn = el("button", { class: "btn btn-sm btn-ghost", onclick: () => toggleTemplateManager() }, "Manage templates");
+  const manageBtn = el("button", { class: "btn btn-sm btn-ghost", type: "button", onclick: () => toggleTemplateManager() }, "Manage templates");
   const manageHost = el("div", { style: "display:none;" });
+
+  // 2. Sender
+  const senderSelect = el("select", {}, NEWSLETTER_SENDERS.map((s) => el("option", { value: s.id }, `${s.fromName} <${s.fromEmail}>`)));
+  const replyInput = el("input", { type: "email", value: NEWSLETTER_DEFAULTS.replyTo });
+
+  // 3. Subject & preview
   const subjectInput = el("input", { type: "text", placeholder: "Subject line…" });
   const previewInput = el("input", { type: "text", placeholder: "Preview text (inbox snippet)…" });
-  const bodyTextarea = el("textarea", { rows: "6", class: "html-editor", placeholder: "<h2>Heading</h2>\n<p>Body copy…</p>" });
-  const previewPane = el("div", { class: "email-preview" });
-  const summary = el("div", { class: "campaign-summary" });
+  const subjectCount = el("div", { class: "char-count" });
+  const previewCount = el("div", { class: "char-count" });
+  const inboxPreview = el("div", { class: "inbox-preview" });
+  let lastFocused = null;
 
+  // 4. Content
+  const bodyTextarea = el("textarea", { rows: "10", class: "html-editor", placeholder: "<h2>Heading</h2>\n<p>Body copy…</p>" });
+  const previewPane = el("div", { class: "email-preview email-preview--desktop" });
+  const deviceToggle = el("div", { class: "segmented segmented--sm" }, ["desktop", "mobile"].map((d) =>
+    el("button", { type: "button", class: "segmented__btn" + (d === "desktop" ? " active" : ""), "data-device": d, onclick: () => {
+      settings.previewDevice = d;
+      deviceToggle.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.device === d));
+      previewPane.className = "email-preview email-preview--" + d;
+    } }, d === "desktop" ? "Desktop" : "Mobile")));
+  const mergeBar = el("div", { class: "merge-bar" }, [el("span", { class: "cell-muted" }, "Insert merge tag:"), ...MERGE_TAGS.map(([label, tag]) =>
+    el("button", { type: "button", class: "chip-btn", onclick: () => insertTag(tag) }, label))]);
+  [subjectInput, previewInput, bodyTextarea].forEach((n) => n.addEventListener("focus", () => { lastFocused = n; }));
+  function insertTag(tag) {
+    const target = lastFocused || bodyTextarea;
+    const start = target.selectionStart ?? target.value.length, end = target.selectionEnd ?? target.value.length;
+    target.value = target.value.slice(0, start) + tag + target.value.slice(end);
+    target.focus();
+    target.selectionStart = target.selectionEnd = start + tag.length;
+    refreshAll();
+  }
+
+  // 5. Audience
+  const summary = el("div", { class: "campaign-summary" });
+  const audienceBlocks = [];
+  if (mode === "newsletter") {
+    const memberChecks = [["all", "All Active Members"], ["contractor", "Contractor Members"], ["corporate", "Corporate Members"], ["renewal_due", "Renewal-Due Members"]]
+      .map(([key, label]) => checkboxRow(label, (checked) => { checked ? selection.memberCriteria.add(key) : selection.memberCriteria.delete(key); refreshAll(); }).row);
+    audienceBlocks.push(el("fieldset", { class: "audience-block" }, [el("legend", {}, "Members"), el("div", { class: "tier-check-group" }, memberChecks)]));
+  }
+  const listRows = state.nonMemberLists.map((list) => checkboxRow(list.name, (checked) => { checked ? selection.nonMemberLists.add(list.id) : selection.nonMemberLists.delete(list.id); refreshAll(); }));
+  const allLists = checkboxRow("All lists", (checked) => {
+    listRows.forEach((r) => { r.box.checked = checked; });
+    if (checked) state.nonMemberLists.forEach((l) => selection.nonMemberLists.add(l.id));
+    else selection.nonMemberLists.clear();
+    refreshAll();
+  });
+  audienceBlocks.push(el("fieldset", { class: "audience-block" }, [el("legend", {}, "Non-Members"), el("div", { class: "tier-check-group" }, [allLists.row, ...listRows.map((r) => r.row)])]));
+  if (mode === "newsletter") {
+    const subRow = checkboxRow("Include site subscribers", (checked) => { selection.includeSubscribers = checked; refreshAll(); });
+    audienceBlocks.push(el("fieldset", { class: "audience-block" }, [el("legend", {}, "Subscribers"), el("div", { class: "tier-check-group" }, [subRow.row])]));
+  }
+
+  // 6. Tracking
+  const utmInput = el("input", { type: "text", placeholder: "utm_campaign value" });
+  const trackRows = [
+    checkboxRow("Track opens", (c) => { settings.trackOpens = c; refreshAll(); }, true).row,
+    checkboxRow("Track link clicks", (c) => { settings.trackClicks = c; refreshAll(); }, true).row,
+    checkboxRow("Add Google Analytics (UTM) tags to links", (c) => { settings.utm = c; utmInput.disabled = !c; }, true).row,
+  ];
+
+  // 7. Delivery
+  const dateInput = el("input", { type: "date", value: TODAY, min: TODAY });
+  const timeInput = el("input", { type: "time", value: NEWSLETTER_DEFAULTS.sendTime });
+  const scheduleFields = el("div", { class: "campaign-row", style: "display:none;" }, [dateInput, timeInput, el("span", { class: "cell-muted" }, "AEST (Sydney)")]);
+  const deliveryRadios = el("div", { class: "tier-check-group" }, [["now", "Send immediately"], ["schedule", "Schedule for later"]].map(([v, l]) => {
+    const r = el("input", { type: "radio", name: "nl-delivery-" + mode, value: v });
+    if (v === "now") r.checked = true;
+    r.addEventListener("change", () => { settings.delivery = v; scheduleFields.style.display = v === "schedule" ? "flex" : "none"; refreshAll(); });
+    return el("label", { class: "tier-check" }, [r, " " + l]);
+  }));
+
+  // 8. Test
+  const testInput = el("input", { type: "text", placeholder: "you@amca.com.au, colleague@amca.com.au" });
+  const testLog = el("div", { class: "cell-muted", style: "font-size:12px;" });
+  const testBtn = el("button", { type: "button", class: "btn btn-sm", onclick: () => {
+    const emails = testInput.value.split(/[,\s]+/).filter((e) => /.+@.+\..+/.test(e));
+    if (!emails.length) { showToast("Enter at least one valid email address for the test.", "info"); return; }
+    settings.tests.push({ at: new Date().toTimeString().slice(0, 5), to: emails });
+    testLog.textContent = settings.tests.map((t) => `Test sent ${t.at} → ${t.to.join(", ")}`).join(" · ");
+    showToast(`Test email sent to ${emails.join(", ")}.`, "success");
+    refreshAll();
+  } }, "Send test");
+
+  // Side: checklist + actions
+  const checklist = el("ul", { class: "checklist" });
+  const recipientsBox = el("div", { class: "recipients-box" });
+  const draftBtn = el("button", { type: "button", class: "btn", onclick: () => saveDraft(true) }, "Save draft");
+  const reviewBtn = el("button", { type: "button", class: "btn btn-primary", onclick: () => openReview() }, "Review & send");
+
+  // ---- template management (unchanged behaviour)
   const rebuildTemplateSelect = () => {
     templateSelect.innerHTML = "";
     state.emailTemplates.forEach((t) => templateSelect.append(el("option", { value: t.id }, t.name)));
@@ -777,13 +1321,13 @@ function buildCampaignComposer(container, opts) {
     manageHost.innerHTML = "";
     const list = el("div", { class: "workflow-list" });
     state.emailTemplates.forEach((t) => {
-      const row = el("div", { class: "workflow-row" }, [
+      list.appendChild(el("div", { class: "workflow-row" }, [
         el("div", { class: "workflow-row__top" }, [
           el("div", { class: "workflow-row__name" }, t.name),
           el("div", { class: "campaign-row" }, [
-            el("button", { class: "btn btn-sm btn-ghost", onclick: () => openTemplateForm(t.id) }, "Edit"),
+            el("button", { type: "button", class: "btn btn-sm btn-ghost", onclick: () => openTemplateForm(t.id) }, "Edit"),
             el("button", {
-              class: "btn btn-sm btn-ghost", onclick: () => {
+              type: "button", class: "btn btn-sm btn-ghost", onclick: () => {
                 if (state.emailTemplates.length <= 1) { showToast("At least one template must remain.", "info"); return; }
                 if (!confirm(`Delete template "${t.name}"?`)) return;
                 state.emailTemplates = state.emailTemplates.filter((x) => x.id !== t.id);
@@ -795,13 +1339,9 @@ function buildCampaignComposer(container, opts) {
           ]),
         ]),
         el("div", { class: "workflow-row__subject" }, `“${t.subject || "(no subject)"}”`),
-      ]);
-      list.appendChild(row);
+      ]));
     });
-    manageHost.append(
-      list,
-      el("button", { class: "btn btn-sm btn-primary", style: "margin-top:10px;", onclick: () => openTemplateForm(null) }, "+ Add template")
-    );
+    manageHost.append(list, el("button", { type: "button", class: "btn btn-sm btn-primary", style: "margin-top:10px;", onclick: () => openTemplateForm(null) }, "+ Add template"));
   }
   function openTemplateForm(id) {
     const t = id ? state.emailTemplates.find((x) => x.id === id) : { name: "", subject: "", previewText: "", bodyHtml: "<p></p>" };
@@ -809,15 +1349,13 @@ function buildCampaignComposer(container, opts) {
     const subjInput = el("input", { type: "text", value: t.subject, placeholder: "Default subject" });
     const prevInput = el("input", { type: "text", value: t.previewText, placeholder: "Default preview text" });
     const bodyInput = el("textarea", { rows: "3" }, t.bodyHtml);
-    const formPanel = el("div", { class: "panel" }, [
+    manageHost.innerHTML = "";
+    manageHost.append(el("div", { class: "panel" }, [
       el("h3", {}, id ? "Edit template" : "Add template"),
-      el("div", { class: "form-row" }, [el("label", {}, "Name"), nameInput]),
-      el("div", { class: "form-row" }, [el("label", {}, "Default subject"), subjInput]),
-      el("div", { class: "form-row" }, [el("label", {}, "Default preview text"), prevInput]),
-      el("div", { class: "form-row" }, [el("label", {}, "Default body (HTML)"), bodyInput]),
+      field("Name", nameInput), field("Default subject", subjInput), field("Default preview text", prevInput), field("Default body (HTML)", bodyInput),
       el("div", { class: "campaign-row" }, [
         el("button", {
-          class: "btn btn-sm btn-primary", onclick: () => {
+          type: "button", class: "btn btn-sm btn-primary", onclick: () => {
             if (!nameInput.value.trim()) { showToast("Template name is required.", "info"); return; }
             const payload = { name: nameInput.value.trim(), subject: subjInput.value, previewText: prevInput.value, bodyHtml: bodyInput.value };
             if (id) Object.assign(t, payload);
@@ -827,145 +1365,207 @@ function buildCampaignComposer(container, opts) {
             showToast(id ? "Template updated." : "Template added.", "success");
           },
         }, "Save"),
-        el("button", { class: "btn btn-sm btn-ghost", onclick: () => renderTemplateManager() }, "Cancel"),
+        el("button", { type: "button", class: "btn btn-sm btn-ghost", onclick: () => renderTemplateManager() }, "Cancel"),
       ]),
-    ]);
-    manageHost.innerHTML = "";
-    manageHost.append(formPanel);
+    ]));
   }
   const applyTemplate = () => {
     const t = state.emailTemplates.find((x) => x.id === templateSelect.value) || state.emailTemplates[0];
     subjectInput.value = t.subject;
     previewInput.value = t.previewText;
     bodyTextarea.value = t.bodyHtml;
-    updatePreview();
-  };
-  const updatePreview = () => { previewPane.innerHTML = bodyTextarea.value || "<p class='cell-muted'>Nothing to preview yet.</p>"; };
-  const updateSummary = () => {
-    const info = composerRecipientInfo(selection);
-    let text = `${describeSelection(selection)} — ${info.sendable} recipient${info.sendable === 1 ? "" : "s"}.`;
-    if (info.blocked > 0) text += ` ${info.blocked} excluded (no consent or unsubscribed).`;
-    summary.textContent = text;
+    refreshAll();
   };
   templateSelect.onchange = applyTemplate;
-  bodyTextarea.oninput = updatePreview;
 
-  const audienceBlocks = [];
-  if (mode === "newsletter") {
-    const memberChecks = [["all", "All Active Members"], ["contractor", "Contractor Members"], ["corporate", "Corporate Members"], ["renewal_due", "Renewal-Due Members"]]
-      .map(([key, label]) => checkboxRow(label, (checked) => { checked ? selection.memberCriteria.add(key) : selection.memberCriteria.delete(key); updateSummary(); }).row);
-    audienceBlocks.push(el("fieldset", { class: "audience-block" }, [el("legend", {}, "Members"), el("div", { class: "tier-check-group" }, memberChecks)]));
+  // ---- live state
+  const sender = () => NEWSLETTER_SENDERS.find((s) => s.id === senderSelect.value) || NEWSLETTER_SENDERS[0];
+  const renderMerge = (s) => s.replace(/{{first_name}}/g, "Alex").replace(/{{company}}/g, "Highline Mechanical").replace(/{{membership_tier}}/g, "Contractor Member").replace(/{{renewal_date}}/g, "1 March 2027");
+  const footerHtml = `<div class="email-footer">AMCA Australia · Level 1, 123 Example St, Melbourne VIC 3000<br>You're receiving this because you're an AMCA member or subscribed at amca.com.au. <u>Update preferences</u> · <u>Unsubscribe</u></div>`;
+  function checks() {
+    const info = composerRecipientInfo(selection);
+    const schedOk = settings.delivery === "now" || (dateInput.value && timeInput.value && (dateInput.value > TODAY || dateInput.value === TODAY));
+    return [
+      { ok: !!internalInput.value.trim(), label: "Campaign name set", soft: true },
+      { ok: !!subjectInput.value.trim(), label: "Subject line written" },
+      { ok: subjectInput.value.length <= 60, label: "Subject ≤ 60 characters", soft: true },
+      { ok: !!previewInput.value.trim(), label: "Preview text written", soft: true },
+      { ok: bodyTextarea.value.replace(/<[^>]*>/g, "").trim().length > 20, label: "Body has content" },
+      { ok: info.sendable > 0, label: `Audience selected (${info.sendable.toLocaleString()} recipients)` },
+      { ok: true, label: "Unsubscribe link & postal address (added automatically)" },
+      { ok: schedOk, label: settings.delivery === "now" ? "Sending immediately" : "Send date & time set" },
+      { ok: settings.tests.length > 0, label: "Test email sent", soft: true },
+    ];
   }
-  const listRows = state.nonMemberLists.map((list) => checkboxRow(list.name, (checked) => { checked ? selection.nonMemberLists.add(list.id) : selection.nonMemberLists.delete(list.id); updateSummary(); }));
-  const allLists = checkboxRow("All lists", (checked) => {
-    listRows.forEach((r) => { r.box.checked = checked; });
-    if (checked) state.nonMemberLists.forEach((l) => selection.nonMemberLists.add(l.id));
-    else selection.nonMemberLists.clear();
-    updateSummary();
-  });
-  audienceBlocks.push(el("fieldset", { class: "audience-block" }, [el("legend", {}, "Non-Members"), el("div", { class: "tier-check-group" }, [allLists.row, ...listRows.map((r) => r.row)])]));
-  if (mode === "newsletter") {
-    const subRow = checkboxRow("Include site subscribers", (checked) => { selection.includeSubscribers = checked; updateSummary(); });
-    audienceBlocks.push(el("fieldset", { class: "audience-block" }, [el("legend", {}, "Subscribers"), el("div", { class: "tier-check-group" }, [subRow.row])]));
+  function refreshAll() {
+    subjectCount.textContent = `${subjectInput.value.length} / 60`;
+    subjectCount.classList.toggle("char-count--over", subjectInput.value.length > 60);
+    previewCount.textContent = `${previewInput.value.length} / 90`;
+    previewCount.classList.toggle("char-count--over", previewInput.value.length > 90);
+    inboxPreview.innerHTML = "";
+    inboxPreview.append(
+      el("div", { class: "inbox-preview__from" }, sender().fromName),
+      el("div", { class: "inbox-preview__subject" }, renderMerge(subjectInput.value) || "(no subject)"),
+      el("div", { class: "inbox-preview__snippet" }, renderMerge(previewInput.value) || "(no preview text — inboxes will show the first line of the body)")
+    );
+    previewPane.innerHTML = renderMerge(bodyTextarea.value || "<p class='cell-muted'>Nothing to preview yet.</p>") + footerHtml;
+    if (!utmInput.dataset.touched) utmInput.value = (internalInput.value || subjectInput.value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+
+    const info = composerRecipientInfo(selection);
+    let text = `${describeSelection(selection)} — ${info.sendable.toLocaleString()} recipient${info.sendable === 1 ? "" : "s"}.`;
+    if (info.blocked > 0) text += ` ${info.blocked} excluded (no consent or unsubscribed).`;
+    summary.textContent = text;
+    recipientsBox.innerHTML = "";
+    recipientsBox.append(
+      el("div", { class: "recipients-box__total" }, info.sendable.toLocaleString()),
+      el("div", { class: "cell-muted" }, "recipients after consent & unsubscribe checks"),
+      el("div", { class: "recipients-box__split" }, [
+        el("span", {}, `Members ${info.split.members}`), el("span", {}, `Non-members ${info.split.nonMembers}`), el("span", {}, `Subscribers ${info.split.subscribers}`),
+      ])
+    );
+    checklist.innerHTML = "";
+    checks().forEach((c) => checklist.append(el("li", { class: c.ok ? "ok" : c.soft ? "warn" : "fail" }, [el("span", { class: "checklist__icon", "aria-hidden": "true" }, c.ok ? "✓" : c.soft ? "!" : "✕"), c.label])));
+    reviewBtn.textContent = settings.delivery === "schedule" ? "Review & schedule" : "Review & send";
+  }
+  [internalInput, subjectInput, previewInput, bodyTextarea, replyInput, dateInput, timeInput].forEach((n) => n.addEventListener("input", refreshAll));
+  senderSelect.addEventListener("change", refreshAll);
+  utmInput.addEventListener("input", () => { utmInput.dataset.touched = "1"; });
+
+  function payload(status) {
+    const info = composerRecipientInfo(selection);
+    const s = sender();
+    return {
+      name: subjectInput.value.trim() || "Untitled newsletter", internalName: internalInput.value.trim(), audience: audienceTypeFor(selection), segment: describeSelection(selection),
+      previewText: previewInput.value, bodyHtml: bodyTextarea.value, fromName: s.fromName, fromEmail: s.fromEmail, replyTo: replyInput.value,
+      sentDate: settings.delivery === "schedule" ? dateInput.value : TODAY, sendTime: settings.delivery === "schedule" ? timeInput.value : new Date().toTimeString().slice(0, 5),
+      recipients: info.sendable, status, tracking: { opens: settings.trackOpens, clicks: settings.trackClicks, utm: settings.utm ? utmInput.value : null },
+      createdBy: state.currentUser?.name,
+    };
+  }
+  let currentId = draft ? draft.id : null;
+  function upsert(data) {
+    const existing = currentId && state.campaigns.find((c) => c.id === currentId);
+    if (existing) { Object.assign(existing, data); return existing; }
+    const cm = { id: genId("cm"), ...data };
+    state.campaigns.unshift(cm);
+    currentId = cm.id;
+    if (mode === "newsletter") state.composeDraftId = cm.id;
+    return cm;
+  }
+  function saveDraft(toast) {
+    const cm = upsert(payload("Draft"));
+    if (toast) showToast(`Draft "${cm.internalName || cm.name}" saved.`, "success");
+    opts.onSaved && opts.onSaved();
+    return cm;
+  }
+  function openReview() {
+    const failing = checks().filter((c) => !c.ok && !c.soft);
+    if (failing.length) { showToast("Fix before sending: " + failing.map((c) => c.label.toLowerCase()).join(", ") + ".", "info"); return; }
+    const p = payload(settings.delivery === "schedule" ? "Scheduled" : "Sent");
+    const warnings = checks().filter((c) => !c.ok && c.soft);
+    const modal = el("div", { class: "modal" }, [
+      el("div", { class: "modal__card" }, [
+        el("h2", {}, settings.delivery === "schedule" ? "Schedule this newsletter?" : "Send this newsletter now?"),
+        el("dl", { class: "drawer-kv", style: "margin:12px 0;" }, [
+          el("dt", {}, "Subject"), el("dd", {}, p.name),
+          el("dt", {}, "Preview text"), el("dd", {}, p.previewText || "—"),
+          el("dt", {}, "From"), el("dd", {}, `${p.fromName} <${p.fromEmail}>`),
+          el("dt", {}, "Reply-to"), el("dd", {}, p.replyTo),
+          el("dt", {}, "Audience"), el("dd", {}, `${p.segment}`),
+          el("dt", {}, "Recipients"), el("dd", {}, p.recipients.toLocaleString()),
+          el("dt", {}, "Delivery"), el("dd", {}, settings.delivery === "schedule" ? `${fmtDate(p.sentDate)} at ${p.sendTime} AEST` : "Immediately"),
+          el("dt", {}, "Tracking"), el("dd", {}, [settings.trackOpens && "opens", settings.trackClicks && "clicks", settings.utm && `UTM: ${utmInput.value}`].filter(Boolean).join(", ") || "Off"),
+        ]),
+        warnings.length ? el("div", { class: "review-warn" }, "Optional steps skipped: " + warnings.map((w) => w.label).join(" · ")) : null,
+        el("div", { class: "campaign-row", style: "justify-content:flex-end;margin-top:14px;" }, [
+          el("button", { type: "button", class: "btn", onclick: () => modal.remove() }, "Back to editing"),
+          el("button", { type: "button", class: "btn btn-primary", onclick: () => { modal.remove(); commit(p); } }, settings.delivery === "schedule" ? "Schedule" : "Send now"),
+        ]),
+      ]),
+    ]);
+    modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
+    document.body.append(modal);
+  }
+  function commit(p) {
+    if (p.status === "Sent") {
+      const rnd = seededRandom(p.name + p.recipients);
+      const baseOpen = p.audience === "Members" ? 0.55 : p.audience === "Non-members" ? 0.35 : p.audience === "Subscribers" ? 0.4 : 0.4;
+      const hard = Math.round(p.recipients * 0.006), soft = Math.round(p.recipients * 0.01);
+      const delivered = p.recipients - hard - soft;
+      const opens = Math.round(delivered * (baseOpen - rnd() * 0.05));
+      Object.assign(p, { hardBounces: hard, softBounces: soft, uniqueOpens: opens, uniqueClicks: Math.round(opens * (0.2 + rnd() * 0.1)), unsubscribes: Math.round(p.recipients * 0.002), complaints: 0,
+        links: [["Read more", "amca.com.au", 0.7], ["View in browser", "mailchi.mp/amca", 0.3]] });
+    }
+    upsert(p);
+    logSync(p.status === "Sent"
+      ? `Mailchimp campaign sent: "${p.name}" → ${p.segment} (${p.recipients} recipients, consent-checked)`
+      : `Mailchimp campaign scheduled: "${p.name}" for ${fmtDate(p.sentDate)} ${p.sendTime} AEST (${p.recipients} recipients)`);
+    showToast(p.status === "Sent" ? `Newsletter sent via Mailchimp to ${p.recipients.toLocaleString()} contact${p.recipients === 1 ? "" : "s"}.` : `Newsletter scheduled for ${fmtDate(p.sentDate)} at ${p.sendTime} AEST.`, "success");
+    opts.onSent && opts.onSent();
   }
 
-  const sendBtn = el("button", {
-    class: "btn btn-primary",
-    onclick: () => {
-      const info = composerRecipientInfo(selection);
-      if (!info.sendable) { showToast("Select at least one audience with recipients before sending.", "info"); return; }
-      const audienceType = audienceTypeFor(selection);
-      const delivered = Math.round(info.sendable * 0.98);
-      const baseOpen = audienceType === "Members" ? 55 : audienceType === "Non-members" ? 35 : audienceType === "Subscribers" ? 40 : 42;
-      const openRate = Math.max(0, baseOpen - (info.sendable > 1000 ? 8 : 0));
-      const clickRate = Math.round(openRate * 0.22);
-      const unsubscribes = Math.max(0, Math.round(info.sendable * 0.002));
-      state.campaigns.unshift({
-        id: genId("cm"), name: subjectInput.value || "Untitled campaign", audience: audienceType, segment: describeSelection(selection),
-        sentDate: TODAY, recipients: info.sendable, delivered, deliveredRate: 98, openRate, clickRate, unsubscribes, status: "Sent",
-        previewText: previewInput.value, bodyHtml: bodyTextarea.value,
-      });
-      logSync(`Mailchimp campaign sent: "${subjectInput.value}" → ${describeSelection(selection)} (${info.sendable} recipients, consent-checked)`);
-      showToast(`Campaign sent via Mailchimp to ${info.sendable} contact${info.sendable === 1 ? "" : "s"}.`, "success");
-      opts.onSent && opts.onSent();
-    },
-  }, "Send via Mailchimp");
-
-  container.append(
-    el("div", { class: "campaign-row" }, [el("label", {}, "Template:"), templateSelect, manageBtn]),
-    manageHost,
-    el("div", { class: "campaign-row" }, [el("label", {}, "Subject:"), subjectInput]),
-    el("div", { class: "campaign-row" }, [el("label", {}, "Preview text:"), previewInput]),
-    el("div", { class: "editor-row" }, [
-      el("div", { class: "editor-col" }, [el("label", {}, "Email body (HTML)"), bodyTextarea]),
-      el("div", { class: "editor-col" }, [el("label", {}, "Preview"), previewPane]),
+  // ---- layout
+  const main = el("div", { class: "composer-main" }, [
+    section(1, "Setup", [
+      field("Campaign name (internal)", internalInput),
+      el("div", { class: "form-row" }, [el("label", {}, "Start from template"), el("div", { class: "campaign-row" }, [templateSelect, manageBtn])]),
+      manageHost,
     ]),
-    el("div", { class: "audience-picker" }, audienceBlocks),
-    summary,
-    el("div", { class: "campaign-row" }, [sendBtn])
-  );
-  applyTemplate();
-  updateSummary();
-}
-function rateClass(rate, kind) {
-  if (rate == null) return "badge-neutral";
-  if (kind === "open") return rate >= 45 ? "badge-success" : rate >= 25 ? "badge-warning" : "badge-danger";
-  if (kind === "click") return rate >= 15 ? "badge-success" : rate >= 7 ? "badge-warning" : "badge-danger";
-  return rate >= 95 ? "badge-success" : "badge-warning";
-}
-function renderCampaignSummary(container, audienceFilter) {
-  if (!container) return;
-  container.innerHTML = "";
-  const rows = state.campaigns.filter((cm) => cm.status === "Sent" && (!audienceFilter || cm.audience === audienceFilter));
-  const totalRecipients = rows.reduce((s, c) => s + (c.recipients || 0), 0);
-  const avgOpen = rows.length ? Math.round(rows.reduce((s, c) => s + (c.openRate || 0), 0) / rows.length) : 0;
-  const avgClick = rows.length ? Math.round(rows.reduce((s, c) => s + (c.clickRate || 0), 0) / rows.length) : 0;
-  const totalUnsub = rows.reduce((s, c) => s + (c.unsubscribes || 0), 0);
-  container.append(
-    statCard("Campaigns sent", rows.length, "All time", ""),
-    statCard("Recipients reached", totalRecipients.toLocaleString(), "All time", "accent-teal"),
-    statCard("Avg. open rate", avgOpen + "%", "Across sent campaigns", ""),
-    statCard("Avg. click rate", avgClick + "%", "Across sent campaigns", "accent-orange"),
-    statCard("Unsubscribes", totalUnsub, "All time", "")
-  );
-}
-function renderCampaignsTable(wrap, audienceFilter) {
-  if (!wrap) return;
-  wrap.innerHTML = "";
-  const table = el("table", {}, [
-    el("thead", {}, el("tr", {}, ["Campaign", "Audience", "Segment", "Sent", "Recipients", "Delivered", "Open rate", "Click rate", "Unsubs", "Status"].map((h) => el("th", {}, h)))),
+    section(2, "Sender", [el("div", { class: "form-grid-2" }, [field("From", senderSelect), field("Reply-to address", replyInput)])]),
+    section(3, "Subject & inbox preview", [
+      field("Subject line", subjectInput, subjectCount),
+      field("Preview text", previewInput, previewCount),
+      el("div", { class: "form-row" }, [el("label", {}, "How it looks in the inbox"), inboxPreview]),
+    ]),
+    section(4, "Content", [
+      mergeBar,
+      el("div", { class: "editor-row" }, [
+        el("div", { class: "editor-col" }, [el("label", {}, "Email body (HTML)"), bodyTextarea]),
+        el("div", { class: "editor-col" }, [el("div", { class: "editor-col__head" }, [el("label", {}, "Preview (sample data)"), deviceToggle]), previewPane]),
+      ]),
+    ]),
+    section(5, "Audience", [el("div", { class: "audience-picker" }, audienceBlocks), summary]),
+    section(6, "Tracking", [el("div", { class: "tier-check-group tier-check-group--stack" }, trackRows), field("UTM campaign tag", utmInput)]),
+    section(7, "Delivery", [deliveryRadios, scheduleFields]),
+    section(8, "Send a test", [el("div", { class: "campaign-row" }, [testInput, testBtn]), testLog]),
   ]);
-  const tbody = el("tbody");
-  state.campaigns.filter((cm) => !audienceFilter || cm.audience === audienceFilter).sort((a, b) => (a.sentDate < b.sentDate ? 1 : -1)).forEach((cm) => {
-    tbody.appendChild(el("tr", {}, [
-      el("td", { class: "cell-primary" }, cm.name),
-      el("td", {}, el("span", { class: "badge badge-navy" }, cm.audience)),
-      el("td", { class: "cell-muted" }, cm.segment),
-      el("td", {}, fmtDate(cm.sentDate)),
-      el("td", {}, cm.recipients ? cm.recipients.toLocaleString() : "—"),
-      el("td", {}, cm.deliveredRate != null ? el("span", { class: "badge " + rateClass(cm.deliveredRate, "delivered") }, cm.deliveredRate + "%") : "—"),
-      el("td", {}, cm.openRate != null ? el("span", { class: "badge " + rateClass(cm.openRate, "open") }, cm.openRate + "%") : "—"),
-      el("td", {}, cm.clickRate != null ? el("span", { class: "badge " + rateClass(cm.clickRate, "click") }, cm.clickRate + "%") : "—"),
-      el("td", { class: "cell-muted" }, cm.unsubscribes != null ? String(cm.unsubscribes) : "—"),
-      el("td", {}, el("span", { class: "badge " + (cm.status === "Sent" ? "badge-success" : "badge-neutral") }, cm.status)),
-    ]));
-  });
-  if (!tbody.children.length) tbody.appendChild(el("tr", {}, el("td", { colspan: "10", class: "cell-muted" }, "No campaigns yet.")));
-  table.appendChild(tbody);
-  wrap.appendChild(table);
+  const side = el("aside", { class: "composer-side" }, [
+    el("div", { class: "panel composer-side__card" }, [
+      el("h3", {}, draft ? "Editing draft" : "Ready to send?"),
+      recipientsBox,
+      checklist,
+      el("div", { class: "composer-side__actions" }, [reviewBtn, draftBtn]),
+    ]),
+  ]);
+  container.append(main, side);
+
+  if (draft) {
+    internalInput.value = draft.internalName || "";
+    subjectInput.value = draft.name || "";
+    previewInput.value = draft.previewText || "";
+    bodyTextarea.value = draft.bodyHtml || "";
+    const s = NEWSLETTER_SENDERS.find((x) => x.fromEmail === draft.fromEmail);
+    if (s) senderSelect.value = s.id;
+    if (draft.replyTo) replyInput.value = draft.replyTo;
+    refreshAll();
+  } else applyTemplate();
 }
+
 function refreshAllCampaignViews() {
-  renderCampaignSummary(byId("campaign-summary-strip"), null);
-  renderCampaignsTable(byId("campaigns-table"), null);
+  if (byId("newsletter-history-body")) renderNewsletterHistory();
   renderCampaignSummary(byId("nonmember-campaign-summary"), "Non-members");
   renderCampaignsTable(byId("nonmember-campaigns-table"), "Non-members");
 }
 function renderNewsletterSend() {
-  buildCampaignComposer(byId("campaign-builder"), { mode: "newsletter", onSent: refreshAllCampaignViews });
-}
-function renderNewsletterHistory() {
-  renderCampaignSummary(byId("campaign-summary-strip"), null);
-  renderCampaignsTable(byId("campaigns-table"), null);
+  const draftId = state.composeDraftId;
+  const draft = draftId && state.campaigns.find((c) => c.id === draftId);
+  byId("newsletter-compose-title").textContent = draft ? `Edit draft — ${draft.internalName || draft.name}` : "New newsletter";
+  buildCampaignComposer(byId("campaign-builder"), {
+    mode: "newsletter",
+    draftId,
+    onSent: () => { state.composeDraftId = null; refreshAllCampaignViews(); switchSubtab("newsletter", "newsletter-history"); },
+    onSaved: () => { refreshAllCampaignViews(); },
+  });
 }
 function renderSubscribers() {
   byId("subscriber-add-btn").onclick = () => openSubscriberForm();
@@ -1503,6 +2103,70 @@ function renderAutomation() {
   renderWorkflowList("workflow-renewal", "renewal");
   renderWorkflowList("workflow-offboarding", "offboarding");
 }
+// Lifecycle emails get the same editing tools as a newsletter: subject,
+// preview text, HTML body with merge tags, live preview and a test send.
+function defaultLifecycleBody(step) {
+  return `<h2>${step.subject.replace(/ — AMCA Australia$/, "")}</h2>\n<p>Hi {{first_name}},</p>\n<p>[${step.name} — write the message for ${step.audience.toLowerCase()} here.]</p>\n<p>Kind regards,<br>The AMCA Membership Team</p>`;
+}
+function buildLifecycleEmailEditor(step, onClose) {
+  const subjectInput = el("input", { type: "text", value: step.subject });
+  const previewInput = el("input", { type: "text", value: step.previewText || "", placeholder: "Preview text (inbox snippet)…" });
+  const bodyInput = el("textarea", { rows: "10", class: "html-editor" });
+  bodyInput.value = step.bodyHtml || defaultLifecycleBody(step);
+  const previewPane = el("div", { class: "email-preview email-preview--desktop" });
+  const inbox = el("div", { class: "inbox-preview" });
+  const subjectCount = el("div", { class: "char-count" });
+  const testInput = el("input", { type: "text", placeholder: "you@amca.com.au" });
+  let lastFocused = bodyInput;
+  [subjectInput, previewInput, bodyInput].forEach((n) => n.addEventListener("focus", () => { lastFocused = n; }));
+  const sample = (t) => t.replace(/{{first_name}}/g, "Alex").replace(/{{company}}/g, "Highline Mechanical").replace(/{{membership_tier}}/g, "Contractor Member").replace(/{{renewal_date}}/g, "1 March 2027");
+  const refresh = () => {
+    subjectCount.textContent = `${subjectInput.value.length} / 60`;
+    subjectCount.classList.toggle("char-count--over", subjectInput.value.length > 60);
+    inbox.innerHTML = "";
+    inbox.append(el("div", { class: "inbox-preview__from" }, "AMCA Australia"), el("div", { class: "inbox-preview__subject" }, sample(subjectInput.value) || "(no subject)"), el("div", { class: "inbox-preview__snippet" }, sample(previewInput.value) || "(no preview text)"));
+    previewPane.innerHTML = sample(bodyInput.value) + `<div class="email-footer">AMCA Australia · Level 1, 123 Example St, Melbourne VIC 3000</div>`;
+  };
+  [subjectInput, previewInput, bodyInput].forEach((n) => n.addEventListener("input", refresh));
+  const deviceToggle = el("div", { class: "segmented segmented--sm" }, ["desktop", "mobile"].map((d) =>
+    el("button", { type: "button", class: "segmented__btn" + (d === "desktop" ? " active" : ""), "data-device": d, onclick: () => {
+      deviceToggle.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.device === d));
+      previewPane.className = "email-preview email-preview--" + d;
+    } }, d === "desktop" ? "Desktop" : "Mobile")));
+  const mergeBar = el("div", { class: "merge-bar" }, [el("span", { class: "cell-muted" }, "Insert merge tag:"), ...MERGE_TAGS.map(([label, tag]) =>
+    el("button", { type: "button", class: "chip-btn", onclick: () => {
+      const t = lastFocused, st = t.selectionStart ?? t.value.length, en = t.selectionEnd ?? t.value.length;
+      t.value = t.value.slice(0, st) + tag + t.value.slice(en); t.focus(); t.selectionStart = t.selectionEnd = st + tag.length; refresh();
+    } }, label))]);
+  const editor = el("div", { class: "workflow-editor workflow-editor--full" }, [
+    el("div", { class: "form-row" }, [el("label", {}, "Subject line"), subjectInput, subjectCount]),
+    el("div", { class: "form-row" }, [el("label", {}, "Preview text"), previewInput]),
+    el("div", { class: "form-row" }, [el("label", {}, "Inbox preview"), inbox]),
+    mergeBar,
+    el("div", { class: "editor-row" }, [
+      el("div", { class: "editor-col" }, [el("label", {}, "Email body (HTML)"), bodyInput]),
+      el("div", { class: "editor-col" }, [el("div", { class: "editor-col__head" }, [el("label", {}, "Preview (sample data)"), deviceToggle]), previewPane]),
+    ]),
+    el("div", { class: "campaign-row" }, [
+      testInput,
+      el("button", { type: "button", class: "btn btn-sm", onclick: () => {
+        const emails = testInput.value.split(/[,\s]+/).filter((e) => /.+@.+\..+/.test(e));
+        if (!emails.length) { showToast("Enter at least one valid email address for the test.", "info"); return; }
+        showToast(`Test of "${step.name}" sent to ${emails.join(", ")}.`, "success");
+      } }, "Send test"),
+    ]),
+    el("div", { class: "campaign-row" }, [
+      el("button", { type: "button", class: "btn btn-sm btn-primary", onclick: () => {
+        if (!subjectInput.value.trim()) { showToast("Subject line is required.", "info"); return; }
+        Object.assign(step, { subject: subjectInput.value, previewText: previewInput.value, bodyHtml: bodyInput.value });
+        showToast(`"${step.name}" template saved.`, "success"); renderAutomation();
+      } }, "Save"),
+      el("button", { type: "button", class: "btn btn-sm btn-ghost", onclick: onClose }, "Cancel"),
+    ]),
+  ]);
+  refresh();
+  return editor;
+}
 function renderWorkflowList(containerId, category) {
   const wrap = byId(containerId);
   wrap.innerHTML = "";
@@ -1522,16 +2186,7 @@ function renderWorkflowList(containerId, category) {
     row.append(top, meta, subjectLine, editBtn);
     function toggleEdit() {
       if (row.querySelector(".workflow-editor")) { row.querySelector(".workflow-editor").remove(); return; }
-      const input = el("input", { type: "text", value: step.subject });
-      const editor = el("div", { class: "workflow-editor" }, [
-        el("label", {}, "Subject line"),
-        input,
-        el("div", { class: "campaign-row" }, [
-          el("button", { class: "btn btn-sm btn-primary", onclick: () => { step.subject = input.value; showToast("Template updated.", "success"); renderAutomation(); } }, "Save"),
-          el("button", { class: "btn btn-sm btn-ghost", onclick: () => editor.remove() }, "Cancel"),
-        ]),
-      ]);
-      row.appendChild(editor);
+      row.appendChild(buildLifecycleEmailEditor(step, () => row.querySelector(".workflow-editor")?.remove()));
     }
     wrap.appendChild(row);
   });
@@ -1544,6 +2199,7 @@ function renderCmsSection() {
   if (!subtabWrap.children.length) {
     CMS_TYPES.forEach((t) => subtabWrap.append(el("button", { class: "subtab-btn", "data-subtab": "cms-" + t.key }, t.label)));
     CMS_TYPES.forEach((t) => panelsWrap.append(el("div", { class: "subtab-panel", id: "cms-" + t.key })));
+    subtabWrap.append(el("button", { class: "subtab-btn", "data-subtab": "cms-usage" }, "Usage"));
   }
   switchSubtab("cms", state.subtab.cms);
 }
@@ -1998,7 +2654,7 @@ function renderFormFieldsSettings() {
 
 // -------------------------------------------------------------- handbook
 function renderHandbookPanel(targetId) {
-  const panel = byId(targetId || "handbook-panel");
+  const panel = byId(targetId || "phandbook-panel");
   panel.innerHTML = "";
   panel.append(
     el("div", { class: "panel" }, [
@@ -2039,27 +2695,78 @@ function renderIntegrations() {
 
 // -------------------------------------------------------------------- users
 function renderUsersView() {
-  switchSubtab("users", state.subtab.users);
+  renderUsers();
 }
+const STAFF_ROLES = ["Chief Executive Officer", "Memberships & Partnerships", "Membership Services", "Finance Officer", "Corporate Services Manager", "Marketing & Communications", "National Training Manager", "Training Administrator", "Technical Services", "BIM-MEPAUS Consultant"];
+const ACCESS_LEVELS = ["Admin", "Editor", "Viewer"];
 function renderUsers() {
   const wrap = byId("users-table");
+  const search = byId("users-search");
+  byId("user-invite-btn").onclick = openInviteForm;
+  search.oninput = renderUsers;
+  const q = search.value.trim().toLowerCase();
+  const rows = state.users.filter((u) => !q || [u.name, u.email, u.role].some((v) => v.toLowerCase().includes(q)));
+  byId("users-count").textContent = `${state.users.filter((u) => u.status === "Active").length} active · ${state.users.filter((u) => u.status === "Invited").length} invited · ${state.users.filter((u) => u.status === "Deactivated").length} deactivated`;
   wrap.innerHTML = "";
-  const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Name", "Email", "Role", "Status", "Last active", "Chats", "Messages", "Docs generated"].map((h) => el("th", {}, h))))]);
+  const table = el("table", {}, [el("thead", {}, el("tr", {}, ["Name", "Role", "Access", "Status", "Last active", "Actions"].map((h) => el("th", {}, h))))]);
   const tbody = el("tbody");
-  USERS.forEach((u) => {
+  rows.forEach((u) => {
+    const accessSel = el("select", { class: "inline-select", onchange: (e) => { u.access = e.target.value; showToast(`${u.name} is now ${u.access}.`, "success"); } }, ACCESS_LEVELS.map((a) => { const o = el("option", { value: a }, a); if ((u.access || "Editor") === a) o.selected = true; return o; }));
+    const isSelf = u.name === state.currentUser?.name;
+    if (isSelf) accessSel.disabled = true;
+    const actions = el("div", { class: "row-actions" });
+    if (u.status === "Invited") {
+      actions.append(el("button", { class: "btn btn-sm", onclick: () => { u.invitedAt = TODAY; showToast(`Invite re-sent to ${u.email}.`, "success"); renderUsers(); } }, "Resend invite"),
+        el("button", { class: "btn btn-sm btn-ghost", onclick: () => { if (!confirm(`Revoke the invite for ${u.email}?`)) return; state.users = state.users.filter((x) => x.id !== u.id); showToast(`Invite for ${u.email} revoked.`, "info"); renderUsers(); } }, "Revoke"));
+    } else if (!isSelf) {
+      actions.append(el("button", { class: "btn btn-sm", onclick: () => { u.status = u.status === "Active" ? "Deactivated" : "Active"; showToast(`${u.name} ${u.status === "Active" ? "reactivated" : "deactivated — sign-in blocked, history kept"}.`, "info"); renderUsers(); } }, u.status === "Active" ? "Deactivate" : "Reactivate"),
+        el("button", { class: "btn btn-sm btn-ghost btn-danger-text", onclick: () => { if (!confirm(`Remove ${u.name}? Their seat is freed; records they created stay.`)) return; state.users = state.users.filter((x) => x.id !== u.id); showToast(`${u.name} removed.`, "info"); renderUsers(); } }, "Remove"));
+    } else actions.append(el("span", { class: "cell-muted" }, "You"));
+    const statusCls = { Active: "badge-success", Invited: "badge-orange", Deactivated: "badge-neutral" }[u.status] || "badge-warning";
     tbody.appendChild(el("tr", {}, [
-      el("td", { class: "cell-primary" }, u.name),
-      el("td", { class: "cell-muted" }, u.email),
-      el("td", {}, el("span", { class: "badge badge-navy" }, u.role)),
-      el("td", {}, el("span", { class: "badge " + (u.status === "Active" ? "badge-success" : "badge-warning") }, u.status)),
-      el("td", { class: "cell-muted" }, u.lastActive === "—" ? "—" : fmtDate(u.lastActive)),
-      el("td", {}, String(u.chats ?? 0)),
-      el("td", {}, String(u.messages ?? 0)),
-      el("td", {}, String(u.documentsGenerated ?? 0)),
+      el("td", {}, [el("div", { class: "cell-primary" }, u.name), el("div", { class: "cell-sub" }, u.email)]),
+      el("td", { class: "cell-muted" }, u.role),
+      el("td", {}, accessSel),
+      el("td", {}, el("span", { class: "badge " + statusCls }, u.status)),
+      el("td", { class: "cell-muted" }, u.status === "Invited" ? `Invited ${fmtDate(u.invitedAt)}` : u.lastActive === "—" ? "—" : fmtDate(u.lastActive)),
+      el("td", {}, actions),
     ]));
   });
+  if (!rows.length) tbody.appendChild(el("tr", {}, el("td", { colspan: "6", class: "cell-muted" }, "No users match.")));
   table.appendChild(tbody);
   wrap.appendChild(table);
+}
+function openInviteForm() {
+  const panel = byId("user-invite-panel");
+  if (panel.style.display === "block") { panel.style.display = "none"; return; }
+  const name = el("input", { type: "text", placeholder: "Full name" });
+  const email = el("input", { type: "email", placeholder: "name@amca.com.au" });
+  const role = el("select", {}, STAFF_ROLES.map((r) => el("option", { value: r }, r)));
+  const access = el("select", {}, ACCESS_LEVELS.map((a) => { const o = el("option", { value: a }, a); if (a === "Editor") o.selected = true; return o; }));
+  panel.innerHTML = "";
+  panel.append(
+    el("h3", {}, "Invite a staff user"),
+    el("p", { class: "cell-muted", style: "margin-bottom:10px;font-size:13px;" }, "They'll get an email to set a password. Seats are for AMCA staff — member portal logins are managed per organisation."),
+    el("div", { class: "form-grid-2" }, [
+      el("div", { class: "form-row" }, [el("label", {}, "Name"), name]),
+      el("div", { class: "form-row" }, [el("label", {}, "Email"), email]),
+      el("div", { class: "form-row" }, [el("label", {}, "Role"), role]),
+      el("div", { class: "form-row" }, [el("label", {}, "Access level"), access]),
+    ]),
+    el("div", { class: "campaign-row" }, [
+      el("button", { class: "btn btn-primary", onclick: () => {
+        if (!name.value.trim() || !/.+@.+\..+/.test(email.value)) { showToast("Name and a valid email are required.", "info"); return; }
+        if (state.users.some((u) => u.email.toLowerCase() === email.value.trim().toLowerCase())) { showToast("That email already has a seat.", "info"); return; }
+        state.users.push({ id: genId("u"), name: name.value.trim(), email: email.value.trim(), role: role.value, access: access.value, status: "Invited", invitedAt: TODAY, lastActive: "—" });
+        panel.style.display = "none";
+        showToast(`Invite sent to ${email.value.trim()}.`, "success");
+        renderUsers();
+      } }, "Send invite"),
+      el("button", { class: "btn btn-ghost", onclick: () => { panel.style.display = "none"; } }, "Cancel"),
+    ]),
+  );
+  panel.style.display = "block";
+  name.focus();
 }
 function renderUsersUsage() {
   const grid = byId("users-usage-grid");
@@ -2613,6 +3320,8 @@ document.addEventListener("DOMContentLoaded", () => {
   byId("drawer-overlay").addEventListener("click", closeDrawer);
   byId("campaign-drawer-close").addEventListener("click", closeCampaignDrawer);
   byId("campaign-drawer-overlay").addEventListener("click", closeCampaignDrawer);
+  byId("campaign-report-close").addEventListener("click", closeCampaignReport);
+  byId("campaign-report-overlay").addEventListener("click", closeCampaignReport);
   byId("doc-detail-close").addEventListener("click", closeDocDetail);
   byId("doc-detail-drawer-overlay").addEventListener("click", closeDocDetail);
   byId("org-detail-close").addEventListener("click", closeOrgDetail);
