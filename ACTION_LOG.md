@@ -1,4 +1,4 @@
-# AMCA CRM Prototype — Action Log
+# AMCA Consolidated Platform Prototype — Action Log
 
 A running record of decisions made and what's still open, so nothing gets lost between rounds of feedback. Newest first.
 

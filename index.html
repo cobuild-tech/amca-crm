@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AMCA CRM — Membership &amp; Engagement Platform (Prototype)</title>
+<title>AMCA Consolidated Platform — CRM, Membership &amp; Operations (Prototype)</title>
+<link rel="icon" href="img/favicon.svg" type="image/svg+xml" />
+<link rel="icon" href="img/favicon-32.png" type="image/png" sizes="32x32" />
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png" />
+<meta name="theme-color" content="#0072ae" />
 <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -19,7 +23,7 @@
           <circle cx="24" cy="24" r="7" fill="var(--amca-navy)"/>
         </svg>
       </span>
-      <div class="sidebar__title"><strong>AMCA</strong><span>CRM Platform</span></div>
+      <div class="sidebar__title"><strong>AMCA</strong><span>Consolidated Platform</span></div>
     </div>
 
     <div class="mode-toggle" id="mode-toggle">
@@ -93,10 +97,20 @@
           <h2>Impact tracker</h2>
           <span class="cell-muted" id="impact-period"></span>
         </div>
-        <div id="impact-grid" class="impact-grid"></div>
+        <p class="panel__intro">What AMCA delivered to the industry this year.</p>
+        <div id="impact-grid" class="impact-grid impact-grid--5"></div>
       </div>
 
-      <div id="dashboard-stats" class="stat-grid"></div>
+      <div class="panel">
+        <div class="panel__head">
+          <h2>Membership health</h2>
+          <a class="link-btn" data-goto="members">Open members →</a>
+        </div>
+        <div id="membership-grid" class="impact-grid"></div>
+      </div>
+
+      <div class="dashboard-group-label">Work in progress</div>
+      <div id="dashboard-stats" class="stat-grid stat-grid--3"></div>
       <div class="grid-2">
         <div class="panel">
           <div class="panel__head"><h2>New member pipeline</h2><a class="link-btn" data-goto="members" data-goto-subtab="members-pipeline">Open pipeline →</a></div>
@@ -244,7 +258,7 @@
           <p class="subtab-intro" style="margin:0;">Sends only go to contacts who've given marketing consent and haven't unsubscribed.</p>
           <button class="btn btn-primary" id="nonmember-campaign-new-btn" style="margin-left:auto;">+ New Campaign</button>
         </div>
-        <div id="nonmember-campaign-summary" class="stat-grid"></div>
+        <div id="nonmember-campaign-summary" class="stat-grid stat-grid--5"></div>
         <div class="panel">
           <div class="panel__head"><h2>Campaign history &amp; analytics</h2></div>
           <div id="nonmember-campaigns-table" class="data-table"></div>
@@ -285,7 +299,7 @@
       </div>
 
       <div id="newsletter-history" class="subtab-panel">
-        <div id="campaign-summary-strip" class="stat-grid"></div>
+        <div id="campaign-summary-strip" class="stat-grid stat-grid--5"></div>
         <div class="panel">
           <div class="panel__head"><h2>All campaign history &amp; analytics</h2></div>
           <div id="campaigns-table" class="data-table"></div>

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   AMCA CRM — Prototype application logic
+   AMCA Consolidated Platform — Prototype application logic
    Pure client-side, in-memory state. No backend — every "integration" action
    (raising a Xero invoice, sending a Mailchimp campaign) is simulated so the
    flow can be demonstrated end-to-end. "Now" is the fixed TODAY constant
@@ -357,28 +357,38 @@ function renderDashboard() {
   const activeCompanies = state.companies.filter((c) => c.memberState === "active");
   const activeUsers = activeCompanies.reduce((sum, c) => sum + c.people.length, 0);
 
-  const impactGrid = byId("impact-grid");
-  impactGrid.innerHTML = "";
-  [
-    ["Active members", activeCompanies.length, ""],
-    ["Portal users", activeUsers, "People with member login access"],
+  const lapsed = state.companies.filter((c) => c.memberState === "lapsed").length;
+  const renderTiles = (gridId, tiles) => {
+    const grid = byId(gridId);
+    grid.innerHTML = "";
+    tiles.forEach(([label, value, sub]) => {
+      grid.append(el("div", { class: "impact-tile" }, [
+        el("div", { class: "impact-tile__value" }, String(value)),
+        el("div", { class: "impact-tile__label" }, label),
+        sub ? el("div", { class: "impact-tile__sub" }, sub) : null,
+      ]));
+    });
+  };
+
+  // Impact = outcomes delivered to the industry (board-report numbers).
+  renderTiles("impact-grid", [
     ["Training hours delivered", IMPACT_METRICS.trainingHoursDelivered.toLocaleString(), "YTD"],
     ["Free resource hours accessed", IMPACT_METRICS.freeResourceHoursAccessed.toLocaleString(), "YTD"],
     ["Resource PDFs downloaded", IMPACT_METRICS.freeResourcePdfDownloads.toLocaleString(), "YTD"],
     ["Event & training attendances", IMPACT_METRICS.eventAttendeesYTD.toLocaleString(), "YTD"],
     ["Policy & regulation guides published", IMPACT_METRICS.policyGuidesPublished, "YTD"],
+  ]);
+
+  // Membership health = the state of the member base itself.
+  renderTiles("membership-grid", [
+    ["Active members", activeCompanies.length, "Organisations"],
+    ["Portal users", activeUsers, "People with member login access"],
     ["Renewal rate", IMPACT_METRICS.renewalRate + "%", "Trailing 12 months"],
-  ].forEach(([label, value, sub]) => {
-    impactGrid.append(el("div", { class: "impact-tile" }, [
-      el("div", { class: "impact-tile__value" }, String(value)),
-      el("div", { class: "impact-tile__label" }, label),
-      sub ? el("div", { class: "impact-tile__sub" }, sub) : null,
-    ]));
-  });
+    ["Lapsed", lapsed, "Candidates for re-engagement"],
+  ]);
 
   const openProspects = state.companies.filter((c) => c.memberState === "prospect").length;
   const renewalActive = state.companies.filter((c) => ["upcoming", "invoice_sent"].includes(getRenewalBoardStage(c))).length;
-  const lapsed = state.companies.filter((c) => c.memberState === "lapsed").length;
   const openActions = computeActionItems().length;
 
   const stats = byId("dashboard-stats");
@@ -386,7 +396,6 @@ function renderDashboard() {
   stats.append(
     statCard("Open enquiries & applications", openProspects, "In the new member pipeline", ""),
     statCard("Renewals in progress", renewalActive, "Upcoming or invoiced", "accent-orange"),
-    statCard("Lapsed", lapsed, "Candidates for re-engagement", ""),
     statCard("Open action items", openActions, "Needing attention today", "accent-teal")
   );
 
@@ -914,7 +923,7 @@ function renderCampaignSummary(container, audienceFilter) {
   const totalUnsub = rows.reduce((s, c) => s + (c.unsubscribes || 0), 0);
   container.append(
     statCard("Campaigns sent", rows.length, "All time", ""),
-    statCard("Total recipients reached", totalRecipients.toLocaleString(), "All time", "accent-teal"),
+    statCard("Recipients reached", totalRecipients.toLocaleString(), "All time", "accent-teal"),
     statCard("Avg. open rate", avgOpen + "%", "Across sent campaigns", ""),
     statCard("Avg. click rate", avgClick + "%", "Across sent campaigns", "accent-orange"),
     statCard("Unsubscribes", totalUnsub, "All time", "")

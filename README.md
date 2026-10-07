@@ -1,6 +1,6 @@
-# AMCA CRM — Membership & Engagement Platform
+# AMCA Consolidated Platform — CRM, Membership & Operations
 
-An interactive, click-through prototype of the CRM described for AMCA Australia. It has no backend — all data is mocked in [`js/data.js`](js/data.js) and mutated in memory — but every screen, workflow and integration touchpoint discussed is represented so it can be demoed and validated before real build work starts.
+An interactive, click-through prototype of the AMCA Australia consolidated platform — CRM, membership, training, document management and the rest of the operational tooling in one place. It has no backend — all data is mocked in [`js/data.js`](js/data.js) and mutated in memory — but every screen, workflow and integration touchpoint discussed is represented so it can be demoed and validated before real build work starts.
 
 Brand palette and type sampled from [amca.com.au](https://amca.com.au) (navy `#0072AE`, orange `#F47920`, teal `#45C2AE`).
 

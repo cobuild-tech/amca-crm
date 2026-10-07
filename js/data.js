@@ -1,5 +1,5 @@
 /* ==========================================================================
-   AMCA CRM — Mock Data Layer
+   AMCA Consolidated Platform — Mock Data Layer
    ---------------------------------------------------------------------------
    Everything here is illustrative sample data for the interactive prototype.
    In the real build this is replaced by API calls into the CRM backend
